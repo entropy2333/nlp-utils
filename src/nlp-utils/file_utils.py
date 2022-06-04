@@ -15,15 +15,15 @@ def write2json(data_list, data_path, data_name="data"):
         print(f"{data_name}({len(data_list)}) saved into {data_path}")
 
 
-def load_json_by_line(file):
+def load_json_by_line(data_path):
     data = []
-    with open(file, "r", encoding="utf8") as f:
+    with open(data_path, "r", encoding="utf8") as f:
         reader = f.readlines()
         for line in reader:
             # print(line)
             sample = json.loads(line.strip())
             data.append(sample)
-    print(f"load {len(data)} from {file}")
+    print(f"load {len(data)} from {data_path}")
     return data
 
 
