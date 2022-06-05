@@ -37,3 +37,46 @@ def write2json_by_line(data_list, data_path, data_name):
             for line in data_list:
                 fout.write(json.dumps(line, ensure_ascii=False) + "\n")
         print(f"{data_name}({len(data_list)}) saved into {data_path}")
+
+
+def walk_dir(dir_path, suffix=".jpg"):
+    """
+    walk all files in the dir_path with suffix
+    """
+    file_list = []
+    for root, dirs, files in os.walk(dir_path):
+        for file_ in files:
+            if file_.endswith(suffix):
+                file_list.append(os.path.join(root, file_))
+    print(f"{len(file_list)} files found in {dir_path}")
+    return file_list
+
+
+def read_file_by_line_lambda(file_path, line_lambda=lambda x: x):
+    """
+    read file by line and apply line_lambda
+
+    Args:
+        file_path: file path
+        line_lambda: lambda function to transform each line
+
+    Returns:
+        list of transformed lines
+
+    Example:
+
+    ```python
+    >>> def transform_line(line):
+    >>>     return line.capitalize()
+    >>> data = read_file_by_line_lambda('data.txt', line_lambda=transform_line)
+    ```
+    """
+    data = []
+    with open(file_path, "r", encoding="utf8") as fin:
+        for line in fin:
+            line = line.strip()
+            if not line:
+                continue
+            item = line_lambda(line)
+            data.append(item)
+    return data
