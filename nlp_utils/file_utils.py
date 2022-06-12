@@ -52,13 +52,14 @@ def walk_dir(dir_path, suffix=".jpg"):
     return file_list
 
 
-def read_file_by_line_lambda(file_path, line_lambda=lambda x: x):
+def read_file_by_line_lambda(file_path, line_lambda=lambda x: x, skip_empty=True):
     """
     read file by line and apply line_lambda
 
     Args:
         file_path: file path
         line_lambda: lambda function to transform each line
+        skip_empty: skip empty line
 
     Returns:
         list of transformed lines
@@ -75,8 +76,9 @@ def read_file_by_line_lambda(file_path, line_lambda=lambda x: x):
     with open(file_path, "r", encoding="utf8") as fin:
         for line in fin:
             line = line.strip()
-            if not line:
+            if skip_empty and not line:
                 continue
             item = line_lambda(line)
             data.append(item)
+    print(f"load {len(data)} from {file_path}")
     return data
