@@ -7,10 +7,11 @@ if [ ! -n "$1" ]; then
 fi
 TAG=$1
 DATE=`date +%Y%m%d_%H%M%S`
+export CUDA_VISIBLE_DEVICES=0
 nohup python -u \
     main.py \
     --bert_dir hfl/chinese-roberta-wwm-ext \
-    --savedmodel_path save/${DATE}_${TAG} \
+    --save_model_path save/${DATE}_${TAG} \
     --max_epochs 5 \
     --batch_size 32 \
     --model_type bert \

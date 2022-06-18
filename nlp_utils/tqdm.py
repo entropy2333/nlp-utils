@@ -3,6 +3,7 @@ Reference: https://github.com/huggingface/evaluate/blob/HEAD/src/evaluate/utils/
 """
 from tqdm import auto as tqdm_lib
 
+
 class EmptyTqdm:
     """Dummy tqdm which doesn't do anything."""
 
@@ -31,6 +32,7 @@ _tqdm_active = True
 
 
 class _tqdm_cls:
+
     def __call__(self, *args, **kwargs):
         if _tqdm_active:
             return tqdm_lib.tqdm(*args, **kwargs)
