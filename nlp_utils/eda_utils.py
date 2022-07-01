@@ -22,3 +22,23 @@ def get_pattern_counter(values, patterns, print_others=False):
             custom_counter['其他'] += 1
     assert sum(custom_counter.values()) == len(values)
     return custom_counter
+
+
+def full_width_to_half_width(text):
+    """
+    Convert full-width characters to half-width.
+    """
+    full_width_characters = list(range(0xFF01, 0xFF5E + 1))
+    half_width_characters = list(range(0x0021, 0x007E + 1))
+    full_half_map = dict(zip(full_width_characters, half_width_characters))
+    return text.translate(full_half_map)
+
+
+def half_width_to_full_width(text):
+    """
+    Convert half-width characters to full-width.
+    """
+    full_width_characters = list(range(0xFF01, 0xFF5E + 1))
+    half_width_characters = list(range(0x0021, 0x007E + 1))
+    full_half_map = dict(zip(half_width_characters, full_width_characters))
+    return text.translate(full_half_map)
