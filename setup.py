@@ -6,7 +6,7 @@ import os
 
 from setuptools import find_packages, setup
 
-REQUIRED_PKGS = ["tqdm", "transformers"]
+REQUIRED_PKGS = ["tqdm", "transformers", "loguru"]
 
 setup(
     name="nlp-utils",

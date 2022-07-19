@@ -1,13 +1,12 @@
 import os
 import json
-# from loguru import logger
+import dill as pickle
 
 
 def load_json(json_file):
     with open(json_file, "r", encoding="utf8") as fin:
         data = json.load(fin)
     print(f"load {len(data)} from {json_file}")
-    # logger.info(f"load {len(data)} from {json_file}")
     return data
 
 
@@ -15,7 +14,6 @@ def write2json(data_list, data_path, data_name="data"):
     with open(data_path, "w", encoding="utf-8") as fout:
         fout.write(json.dumps(data_list, ensure_ascii=False, indent=2))
     print(f"{data_name}({len(data_list)}) saved into {data_path}")
-    # logger.info(f"{data_name}({len(data_list)}) saved into {data_path}")
 
 
 def load_json_by_line(data_path):
@@ -83,4 +81,24 @@ def read_file_by_line_lambda(file_path, line_lambda=lambda x: x, condition=lambd
                 continue
             data.append(line_lambda(line))
     print(f"load {len(data)} from {file_path}")
+    return data
+
+
+def load_pickle(file_path):
+    """
+    load pickle file
+    """
+    with open(file_path, "rb") as fin:
+        data = pickle.load(fin)
+    print(f"load {len(data)} from {file_path}")
+    return data
+
+
+def write2pickle(data, file_path, data_name="data"):
+    """
+    write data to pickle file
+    """
+    with open(file_path, "wb") as fout:
+        pickle.dump(data, fout)
+    print(f"{data_name}({len(data)}) saved into {file_path}")
     return data
