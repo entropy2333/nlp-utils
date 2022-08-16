@@ -2,6 +2,7 @@ import re
 import string
 from typing import List, Dict
 from functools import partial
+from itertools import chain
 
 
 def get_pattern_counter(values, patterns, print_others=False):
@@ -47,10 +48,9 @@ def half_width_to_full_width(text):
     return text.translate(full_half_map)
 
 
-def text2ner_label_with_document_level_exactly_match(transcripts: List[str],
-                                                     exactly_entities_label: Dict,
-                                                     entities_list: List[str],
-                                                     markup_type: str = 'bio') -> List[List[str]]:
+def text2ner_label_with_exactly_match(transcripts: List[str],
+                                      exactly_entities_label: List[List[str]],
+                                      markup_type: str = 'bio') -> List[List[str]]:
     '''
     Convert transcripts to iob label using document level tagging match method,
         all transcripts will be concatenated as a sequences.
@@ -65,12 +65,10 @@ def text2ner_label_with_document_level_exactly_match(transcripts: List[str],
 
     Example:
         >>> transcripts = ['他是Dan', 'Mark', '刘德华是中国人']
-        >>> exactly_entities_label = {'中国人': '刘德华', '外国人': 'DanMark'}
-        >>> entities_list = ['中国人', '外国人']
-        >>> text2ner_label_with_document_level_exactly_match(transcripts, exactly_entities_label, entities_list)
-        [['O', 'O', 'B-外国人', 'I-外国人', 'I-外国人'],
- ['I-外国人', 'I-外国人', 'I-外国人', 'E-外国人'],
- ['B-中国人', 'I-中国人', 'E-中国人', 'O', 'O', 'O', 'O']]
+        >>> exactly_entities_label = [['中国人', '刘德华'], ['外国人', 'DanMark']]
+        >>> text2bio_label_with_exactly_match(transcripts, exactly_entities_label)
+        [['O', 'O', 'B-外国人', 'I-外国人', 'I-外国人'], ['I-外国人', 'I-外国人', 'I-外国人', 'I-外国人'], ['B-中国人', 'I-中国人', 'I-中国人', 'O', 'O', 'O', 'O']]
+        [('中国人', 9, 12), ('外国人', 2, 9)]
     '''
 
     def preprocess_transcripts(transcripts: List[str]):
@@ -94,9 +92,7 @@ def text2ner_label_with_document_level_exactly_match(transcripts: List[str],
 
     result_tags = ['O'] * len(concatenated_sequences)
     matched_entities = []
-    for entity_type, entity_value in exactly_entities_label.items():
-        if entity_type not in entities_list:
-            continue
+    for entity_type, entity_value in exactly_entities_label:
         (src_seq, src_idx), (tgt_seq, _) = preprocess_transcripts(concatenated_sequences), preprocess_transcripts(entity_value)
         src_len, tgt_len = len(src_seq), len(tgt_seq)
         if tgt_len == 0:
@@ -104,10 +100,10 @@ def text2ner_label_with_document_level_exactly_match(transcripts: List[str],
 
         for i in range(src_len - tgt_len + 1):
             if src_seq[i:i + tgt_len] == tgt_seq:
+                matched_entities.append((entity_type, i, i + tgt_len))
                 if markup_type == 'bio':
                     tag = ['I-{}'.format(entity_type)] * (src_idx[i + tgt_len - 1] - src_idx[i] + 1)
                     tag[0] = 'B-{}'.format(entity_type)
-                    result_tags[src_idx[i]:src_idx[i + tgt_len - 1] + 1] = tag
                 elif markup_type == 'bmes':
                     if tgt_len == 1:
                         tag[0] = 'S-{}'.format(entity_type)
@@ -115,8 +111,7 @@ def text2ner_label_with_document_level_exactly_match(transcripts: List[str],
                         tag = ['M-{}'.format(entity_type)] * (src_idx[i + tgt_len - 1] - src_idx[i] + 1)
                         tag[0] = 'B-{}'.format(entity_type)
                         tag[-1] = 'E-{}'.format(entity_type)
-                    matched_entities.append((entity_type, i, i + tgt_len))
-                    result_tags[src_idx[i]:src_idx[i + tgt_len - 1] + 1] = tag
+                result_tags[src_idx[i]:src_idx[i + tgt_len - 1] + 1] = tag
 
     tagged_transcript = []
     start = 0
@@ -128,6 +123,17 @@ def text2ner_label_with_document_level_exactly_match(transcripts: List[str],
     return tagged_transcript, matched_entities
 
 
-text2bio_label_with_document_level_exactly_match = partial(text2ner_label_with_document_level_exactly_match, markup_type='bio')
-text2bmes_label_with_document_level_exactly_match = partial(text2ner_label_with_document_level_exactly_match,
-                                                            markup_type='bmes')
+text2bio_label_with_exactly_match = partial(text2ner_label_with_exactly_match, markup_type='bio')
+text2bmes_label_with_exactly_match = partial(text2ner_label_with_exactly_match, markup_type='bmes')
+
+
+def flatten_list(lst):
+    return list(chain.from_iterable(lst))
+
+
+def is_chinese(s):
+    cnt = 0
+    for _char in s:
+        if '\u4e00' <= _char <= '\u9fa5':
+            cnt += 1
+    return cnt >= (len(s) / 2)

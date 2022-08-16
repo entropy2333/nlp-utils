@@ -102,3 +102,30 @@ def write2pickle(data, file_path, data_name="data"):
         pickle.dump(data, fout)
     print(f"{data_name}({len(data)}) saved into {file_path}")
     return data
+
+
+def load_ner_char_file(file_path, sep="\t"):
+    """
+    load ner char file
+    """
+    ner_data = []
+    with open(file_path, "r", encoding="utf8") as fin:
+        sent = []
+        for line in fin:
+            line = line.strip()
+            if not line:
+                if len(sent) > 0:
+                    ner_data.append(sent)
+                continue
+            splits = line.split(sep)
+            if len(splits) != 2:
+                continue
+            char, tag = splits
+            if tag[0] == "M":
+                tag = "I" + tag[1:]
+            if tag[0] == "E":
+                tag = "I" + tag[1:]
+            sent.append((char, tag))
+
+    print(f"load {len(ner_data)} from {file_path}")
+    return ner_data
