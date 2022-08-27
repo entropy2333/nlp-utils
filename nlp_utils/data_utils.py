@@ -106,7 +106,7 @@ def text2ner_label_with_exactly_match(transcripts: List[str],
                     tag[0] = 'B-{}'.format(entity_type)
                 elif markup_type == 'bmes':
                     if tgt_len == 1:
-                        tag[0] = 'S-{}'.format(entity_type)
+                        tag = ['S-{}'.format(entity_type)]
                     else:
                         tag = ['M-{}'.format(entity_type)] * (src_idx[i + tgt_len - 1] - src_idx[i] + 1)
                         tag[0] = 'B-{}'.format(entity_type)
