@@ -48,12 +48,12 @@ def read_cv_image(image_path):
 
 
 def visualize(image, titles=''):
-    '''
+    """
 
     example:
     >>> visualize(image, titles='image')
     >>> visualize([image, aug_image], titles=['image', 'aug_image'])
-    '''
+    """
     if isinstance(image, list):
         n_image = len(image)
         n_row = int(n_image**0.5)

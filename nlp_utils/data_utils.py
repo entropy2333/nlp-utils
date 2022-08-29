@@ -51,7 +51,7 @@ def half_width_to_full_width(text):
 def text2ner_label_with_exactly_match(transcripts: List[str],
                                       exactly_entities_label: List[List[str]],
                                       markup_type: str = 'bio') -> List[List[str]]:
-    '''
+    """
     Convert transcripts to iob label using document level tagging match method,
         all transcripts will be concatenated as a sequences.
     Reference: https://github.com/wenwenyu/PICK-pytorch/blob/master/data_utils/documents.py#L229
@@ -69,14 +69,14 @@ def text2ner_label_with_exactly_match(transcripts: List[str],
         >>> text2bio_label_with_exactly_match(transcripts, exactly_entities_label)
         [['O', 'O', 'B-外国人', 'I-外国人', 'I-外国人'], ['I-外国人', 'I-外国人', 'I-外国人', 'I-外国人'], ['B-中国人', 'I-中国人', 'I-中国人', 'O', 'O', 'O', 'O']]
         [('中国人', 9, 12), ('外国人', 2, 9)]
-    '''
+    """
 
     def preprocess_transcripts(transcripts: List[str]):
-        '''
+        """
         preprocess texts into separated word-level list, this is helpful to matching tagging label between source and target label,
         e.g. source: xxxx hello ! world xxxx  target: xxxx hello world xxxx,
         we want to match 'hello ! world' with 'hello world' to decrease the impact of ocr bad result.
-        '''
+        """
         seq, idx = [], []
         for index, x in enumerate(transcripts):
             if x not in string.punctuation and x not in string.whitespace:

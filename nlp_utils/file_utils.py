@@ -1,6 +1,10 @@
 import os
+import glob
+from omegaconf import OmegaConf
 import json
 import dill as pickle
+from pathlib import Path
+from typing import Union, List, Dict
 
 
 def load_json(json_file):
@@ -10,13 +14,16 @@ def load_json(json_file):
     return data
 
 
-def write2json(data_list, data_path, data_name="data"):
+def write2json(data, data_path, data_name="data", ensure_ascii=False, indent=2):
     with open(data_path, "w", encoding="utf-8") as fout:
-        fout.write(json.dumps(data_list, ensure_ascii=False, indent=2))
-    print(f"{data_name}({len(data_list)}) saved into {data_path}")
+        fout.write(json.dumps(data, ensure_ascii=ensure_ascii, indent=indent))
+    print(f"{data_name}({len(data)}) saved into {data_path}")
 
 
 def load_json_by_line(data_path):
+    """
+    load jsonline file
+    """
     data = []
     with open(data_path, "r", encoding="utf8") as f:
         reader = f.readlines()
@@ -28,27 +35,27 @@ def load_json_by_line(data_path):
     return data
 
 
-def write2json_by_line(data_list, data_path, data_name='data'):
+def write2json_by_line(data: Union[List, Dict], data_path, data_name='data', ensure_ascii=False, indent=2):
+    """
+    write data to jsonline file
+    """
     with open(data_path, "w", encoding="utf-8") as fout:
-        if isinstance(data_list, dict):
-            for k, v in data_list.items():
-                fout.write(json.dumps({"{}".format(k): v}, ensure_ascii=False))
+        if isinstance(data, dict):
+            for k, v in data.items():
+                fout.write(json.dumps({"{}".format(k): v}, ensure_ascii=ensure_ascii, indent=indent))
                 fout.write("\n")
-        elif isinstance(data_list, list):
-            for line in data_list:
-                fout.write(json.dumps(line, ensure_ascii=False) + "\n")
-        print(f"{data_name}({len(data_list)}) saved into {data_path}")
+        elif isinstance(data, list):
+            for line in data:
+                fout.write(json.dumps(line, ensure_ascii=ensure_ascii, indent=indent))
+                fout.write("\n")
+        print(f"{data_name}({len(data)}) saved into {data_path}")
 
 
-def walk_dir(dir_path, suffix=".jpg"):
+def walk_dir(dir_path, suffix=".jpg", recursive=True):
     """
     walk all files in the dir_path with suffix
     """
-    file_list = []
-    for root, dirs, files in os.walk(dir_path):
-        for file_ in files:
-            if file_.endswith(suffix):
-                file_list.append(os.path.join(root, file_))
+    file_list = glob.glob(os.path.join(dir_path, "*" + suffix), recursive=recursive)
     print(f"{len(file_list)} files found in {dir_path}")
     return file_list
 
@@ -129,3 +136,49 @@ def load_ner_char_file(file_path, sep="\t"):
 
     print(f"load {len(ner_data)} from {file_path}")
     return ner_data
+
+
+def _get_config_from_cli():
+    cfg_cli = OmegaConf.from_cli()
+    cli_keys = list(cfg_cli.keys())
+    for cli_key in cli_keys:
+        if "--" in cli_key:
+            cfg_cli[cli_key.replace("--", "")] = cfg_cli[cli_key]
+            del cfg_cli[cli_key]
+
+    return cfg_cli
+
+
+def get_config_from_yaml(default_conf_file: str = "./configs/default.yaml"):
+    cfg = OmegaConf.load(default_conf_file)
+
+    cfg_cli = _get_config_from_cli()
+    if "config" in cfg_cli:
+        cfg_cli_config = OmegaConf.load(cfg_cli.config)
+        cfg = OmegaConf.merge(cfg, cfg_cli_config)
+        del cfg_cli["config"]
+
+    cfg = OmegaConf.merge(cfg, cfg_cli)
+
+    def _check_config(cfg):
+        # TODO
+        pass
+
+    def _update_config(cfg):
+        cfg.save_weight_dir = os.path.join(cfg.workspace, "checkpoints")
+        cfg.tensorboard_dir = os.path.join(cfg.workspace, "tensorboard_logs")
+        # set per-gpu batch size
+        try:
+            import torch
+            num_devices = torch.cuda.device_count()
+            for mode in ["train", "val"]:
+                new_batch_size = cfg[mode].batch_size // num_devices
+                cfg[mode].batch_size = new_batch_size
+        except Exception as e:
+            print(e)
+            pass
+
+    _check_config(cfg)
+    _update_config(cfg)
+
+    return cfg
