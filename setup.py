@@ -6,11 +6,12 @@ import os
 
 from setuptools import find_packages, setup
 
-REQUIRED_PKGS = ["tqdm", "transformers", "loguru"]
+REQUIRED_PKGS = ["tqdm", "dill", "omegaconf"]
 
 setup(
     name="nlp-utils",
-    version="0.1.1dev0",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
+    version=
+    "0.1.1dev0",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
     description="Utils for NLP.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",

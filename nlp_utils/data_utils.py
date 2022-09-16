@@ -4,6 +4,23 @@ from typing import List, Dict
 from functools import partial
 from itertools import chain
 
+FULL_WIDTH_CHARACTERS_A_Z = list(range(0xFF21, 0xFF3B))
+FULL_WIDTH_CHARACTERS_a_z = list(range(0xFF41, 0xFF5B))
+FULL_WIDTH_CHARACTERS_0_9 = list(range(0xFF10, 0xFF1A))
+HALF_WIDTH_CHARACTERS_A_Z = list(range(0x0041, 0x005B))
+HALF_WIDTH_CHARACTERS_a_z = list(range(0x0061, 0x007B))
+HALF_WIDTH_CHARACTERS_0_9 = list(range(0x0030, 0x003A))
+FULL_WIDTH_CHARACTERS_TOTAL = list(range(0xFF01, 0xFF5E + 1))
+HALF_WIDTH_CHARACTERS_TOTAL = list(range(0x0021, 0x007E + 1))
+FULL_WIDTH_CHARACTERS_PUNCTUATION = list(range(0xFF01, 0xFF0F + 1)) + \
+                                    list(range(0xFF1A, 0xFF20 + 1)) + \
+                                    list(range(0xFF3B, 0xFF40 + 1)) + \
+                                    list(range(0xFF5B, 0xFF5E + 1))
+HALF_WIDTH_CHARACTERS_PUNCTUATION = list(range(0x0021, 0x002F + 1)) + \
+                                    list(range(0x003A, 0x0040 + 1)) + \
+                                    list(range(0x005B, 0x0060 + 1)) + \
+                                    list(range(0x007B, 0x007E + 1))
+
 
 def get_pattern_counter(values, patterns, print_others=False):
     custom_counter = {}
@@ -28,24 +45,70 @@ def get_pattern_counter(values, patterns, print_others=False):
     return custom_counter
 
 
-def full_width_to_half_width(text):
+def get_full_or_width_characters(mode='full',
+                                 include_a_z=True,
+                                 include_A_Z=True,
+                                 include_0_9=True,
+                                 include_punctuation=True,
+                                 index=False):
+    index_list = []
+    if include_a_z:
+        index_list.extend(FULL_WIDTH_CHARACTERS_a_z if mode ==
+                          'full' else HALF_WIDTH_CHARACTERS_a_z)
+    if include_A_Z:
+        index_list.extend(FULL_WIDTH_CHARACTERS_A_Z if mode ==
+                          'full' else HALF_WIDTH_CHARACTERS_A_Z)
+    if include_0_9:
+        index_list.extend(FULL_WIDTH_CHARACTERS_0_9 if mode ==
+                          'full' else HALF_WIDTH_CHARACTERS_0_9)
+    if include_punctuation:
+        index_list.extend(FULL_WIDTH_CHARACTERS_PUNCTUATION if mode ==
+                          'full' else HALF_WIDTH_CHARACTERS_PUNCTUATION)
+    if index:
+        return index_list
+    return [chr(i) for i in index_list]
+
+
+get_full_width_characters = partial(get_full_or_width_characters, mode='full')
+get_half_width_characters = partial(get_full_or_width_characters, mode='half')
+
+
+def convert_full_and_half_width(
+    text,
+    mode="full2half",
+    include_a_z=True,
+    include_A_Z=True,
+    include_0_9=True,
+    include_punctuation=True,
+):
     """
     Convert full-width characters to half-width.
     """
-    full_width_characters = list(range(0xFF01, 0xFF5E + 1))
-    half_width_characters = list(range(0x0021, 0x007E + 1))
-    full_half_map = dict(zip(full_width_characters, half_width_characters))
+    full_width_characters = get_full_or_width_characters(mode='full',
+                                                         include_a_z=include_a_z,
+                                                         include_A_Z=include_A_Z,
+                                                         include_0_9=include_0_9,
+                                                         include_punctuation=include_punctuation,
+                                                         index=True)
+    half_width_characters = get_full_or_width_characters(mode='half',
+                                                         include_a_z=include_a_z,
+                                                         include_A_Z=include_A_Z,
+                                                         include_0_9=include_0_9,
+                                                         include_punctuation=include_punctuation,
+                                                         index=True)
+    assert len(full_width_characters) == len(half_width_characters), (len(full_width_characters),
+                                                                      len(half_width_characters))
+    if mode == "half2full":
+        full_half_map = dict(zip(half_width_characters, full_width_characters))
+    elif mode == "full2half":
+        full_half_map = dict(zip(full_width_characters, half_width_characters))
+    else:
+        raise ValueError("mode must be 'half2full' or 'full2half'")
     return text.translate(full_half_map)
 
 
-def half_width_to_full_width(text):
-    """
-    Convert half-width characters to full-width.
-    """
-    full_width_characters = list(range(0xFF01, 0xFF5E + 1))
-    half_width_characters = list(range(0x0021, 0x007E + 1))
-    full_half_map = dict(zip(half_width_characters, full_width_characters))
-    return text.translate(full_half_map)
+convert_full2half_width = partial(convert_full_and_half_width, mode='full2half')
+convert_half2full_width = partial(convert_full_and_half_width, mode='half2full')
 
 
 def text2ner_label_with_exactly_match(transcripts: List[str],
@@ -93,7 +156,8 @@ def text2ner_label_with_exactly_match(transcripts: List[str],
     result_tags = ['O'] * len(concatenated_sequences)
     matched_entities = []
     for entity_type, entity_value in exactly_entities_label:
-        (src_seq, src_idx), (tgt_seq, _) = preprocess_transcripts(concatenated_sequences), preprocess_transcripts(entity_value)
+        (src_seq, src_idx), (tgt_seq, _) = preprocess_transcripts(
+            concatenated_sequences), preprocess_transcripts(entity_value)
         src_len, tgt_len = len(src_seq), len(tgt_seq)
         if tgt_len == 0:
             continue
@@ -108,7 +172,8 @@ def text2ner_label_with_exactly_match(transcripts: List[str],
                     if tgt_len == 1:
                         tag = ['S-{}'.format(entity_type)]
                     else:
-                        tag = ['M-{}'.format(entity_type)] * (src_idx[i + tgt_len - 1] - src_idx[i] + 1)
+                        tag = ['M-{}'.format(entity_type)
+                              ] * (src_idx[i + tgt_len - 1] - src_idx[i] + 1)
                         tag[0] = 'B-{}'.format(entity_type)
                         tag[-1] = 'E-{}'.format(entity_type)
                 result_tags[src_idx[i]:src_idx[i + tgt_len - 1] + 1] = tag
