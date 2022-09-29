@@ -1,0 +1,1 @@
+from .text_generation import SimpleT5 as SimpleT5
