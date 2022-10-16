@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dblp-bibtex
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      0.4
 // @description  add bibtex info on PapersWithCode
 // @author       You
 // @match        https://paperswithcode.com/paper/*
@@ -18,7 +18,16 @@
     function () {
         'use strict';
         $(document).ready(function () {
-            let getBibtexByTitle = function (query, format = 0) {
+            let cleanString = function (str) {
+                // remove all non-alphanumeric characters except space and hyphen
+                return str.replace(/[^a-zA-Z0-9 -]/g, "").replace(/\s+/g, " ").trim();
+            }
+
+            let getBibtexByTitle = function (query, format = 1) {
+                // get bibtex by title
+                // @param query: title of the paper
+                // @param format: 0 condensed, 1 standard, 2 with crossref
+                query = encodeURIComponent(cleanString(query));
                 var request_url = `https://dblp.uni-trier.de/search/publ/bibtex${format}?q=${query}`;
                 console.log(request_url);
                 var bibitem = $('a.badge.badge-light:last').clone();
@@ -44,7 +53,6 @@
             };
             var title = $("h1").text().trim();
             console.log(title);
-            title = encodeURIComponent(title);
             getBibtexByTitle(title);
             getGithubUrl(title);
         })
