@@ -14,14 +14,13 @@ import torch
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.progress import TQDMProgressBar
+from pytorch_lightning.callbacks.rich_model_summary import RichModelSummary
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
-from transformers import (AutoFeatureExtractor, AutoProcessor, AutoTokenizer,
-                          BertTokenizerFast, DonutProcessor,
-                          PreTrainedTokenizer, VisionEncoderDecoderConfig,
-                          VisionEncoderDecoderModel)
+from transformers import (AutoFeatureExtractor, AutoProcessor, AutoTokenizer, BertTokenizerFast, DonutProcessor,
+                          PreTrainedTokenizer, VisionEncoderDecoderConfig, VisionEncoderDecoderModel)
 from transformers.optimization import get_linear_schedule_with_warmup
 from transformers.processing_utils import ProcessorMixin
 
@@ -205,6 +204,7 @@ class LightningModel(pl.LightningModule):
         self.output_dir = output_dir
         self.average_training_loss = None
         self.average_validation_loss = None
+        self.average_validation_acc = None
         self.save_only_last_epoch = save_only_last_epoch
         self.learning_rate = learning_rate
         self.warmup_ratio = warmup_ratio
@@ -273,10 +273,13 @@ class LightningModel(pl.LightningModule):
             decoder_attention_mask=decoder_attention_mask,
             labels=labels,
         )
-        #TODO: calculate accuracy
 
-        self.log("val_loss", loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
-        return loss
+        # calculate accuracy
+        generated_ids = outputs.argmax(-1)
+        labels_mask = labels != -100
+        accuracy = (generated_ids * labels_mask).eq(labels).sum() / labels_mask.sum()
+
+        return {"val_loss": loss, "val_acc": accuracy}
 
     def test_step(self, batch, batch_size):
         """ test step """
@@ -327,7 +330,10 @@ class LightningModel(pl.LightningModule):
             torch.mean(torch.stack([x["loss"] for x in training_step_outputs])).item(),
             4,
         )
-        path = f"{self.output_dir}/simpleocr-epoch-{self.current_epoch}-train-loss-{str(self.average_training_loss)}-val-loss-{str(self.average_validation_loss)}"
+        path = f"{self.output_dir}/simpleocr-epoch-{self.current_epoch}-" + \
+                f"train-loss-{str(self.average_training_loss)}-" + \
+                f"val-loss-{str(self.average_validation_loss)}-" + \
+                f"val-acc-{str(self.average_validation_acc)}"
         if self.save_only_last_epoch:
             if self.current_epoch == self.trainer.max_epochs - 1:
                 self.tokenizer.save_pretrained(path)
@@ -339,11 +345,18 @@ class LightningModel(pl.LightningModule):
             self.model.save_pretrained(path)
 
     def validation_epoch_end(self, validation_step_outputs):
-        _loss = [x.cpu() for x in validation_step_outputs]
+        _loss = [x["val_loss"].cpu() for x in validation_step_outputs]
+        _acc = [x["val_acc"].cpu() for x in validation_step_outputs]
         self.average_validation_loss = np.round(
             torch.mean(torch.stack(_loss)).item(),
             4,
         )
+        self.average_validation_acc = np.round(
+            torch.mean(torch.stack(_acc)).item(),
+            4,
+        )
+        self.log("val_loss", self.average_validation_loss, prog_bar=True, logger=True, on_epoch=True, on_step=False)
+        self.log("val_acc", self.average_validation_acc, prog_bar=True, logger=True, on_epoch=True, on_step=False)
 
 
 class SimpleOCR:
@@ -470,6 +483,7 @@ class SimpleOCR:
         callbacks = [
             TQDMProgressBar(refresh_rate=50),
             LearningRateMonitor(logging_interval="step"),
+            RichModelSummary(max_depth=3),
         ]
 
         if early_stopping_patience_epochs > 0:
