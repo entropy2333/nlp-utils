@@ -16,6 +16,7 @@ from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.progress import TQDMProgressBar
 from pytorch_lightning.callbacks.rich_model_summary import RichModelSummary
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.utilities import rank_zero_only
 from pytorch_lightning.strategies import DDPStrategy
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
@@ -77,7 +78,7 @@ class PyTorchDataModule(Dataset):
             max_length=self.target_max_token_len,
             padding="max_length",
             truncation=True,
-            return_attention_mask=True,
+            return_attention_mask=False,
             add_special_tokens=True,
             return_tensors="pt",
         )
@@ -88,8 +89,6 @@ class PyTorchDataModule(Dataset):
 
         return dict(
             pixel_values=pixel_values.squeeze(),
-            decoder_input_ids=target_text_encoding["input_ids"].squeeze(),
-            decoder_attention_mask=target_text_encoding["attention_mask"].flatten(),
             labels=labels.flatten(),
         )
 
@@ -226,8 +225,8 @@ class LightningModel(pl.LightningModule):
     def training_step(self, batch, batch_size):
         """ training step """
         pixel_values = batch["pixel_values"]
-        decoder_input_ids = batch["decoder_input_ids"]
-        decoder_attention_mask = batch["decoder_attention_mask"]
+        decoder_input_ids = batch.get("decoder_input_ids", None)
+        decoder_attention_mask = batch.get("decoder_attention_mask", None)
         labels = batch["labels"]
 
         if self.fgm is not None:
@@ -263,8 +262,8 @@ class LightningModel(pl.LightningModule):
     def validation_step(self, batch, batch_size):
         """ validation step """
         pixel_values = batch["pixel_values"]
-        decoder_input_ids = batch["decoder_input_ids"]
-        decoder_attention_mask = batch["decoder_attention_mask"]
+        decoder_input_ids = batch.get("decoder_input_ids", None)
+        decoder_attention_mask = batch.get("decoder_attention_mask", None)
         labels = batch["labels"]
 
         loss, outputs = self(
@@ -324,6 +323,7 @@ class LightningModel(pl.LightningModule):
         }
         return [optimizer], [sceduler]
 
+    @rank_zero_only
     def training_epoch_end(self, training_step_outputs):
         """ save tokenizer and model on epoch end """
         self.average_training_loss = np.round(
@@ -387,6 +387,9 @@ class SimpleOCR:
             self.tokenizer = BertTokenizerFast.from_pretrained(decoder_name)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(decoder_name)
+        self.model.config.decoder_start_token_id = self.tokenizer.cls_token_id
+        self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        self.model.config.vocab_size = self.model.config.decoder.vocab_size
         self.model.decoder.resize_token_embeddings(len(self.tokenizer))
 
     def from_pretrained(
@@ -672,7 +675,6 @@ class SimpleOCR:
             do_sample=do_sample,
             num_return_sequences=num_return_sequences,
         )
-
         preds = self.tokenizer.batch_decode(
             generated_ids,
             skip_special_tokens=skip_special_tokens,
