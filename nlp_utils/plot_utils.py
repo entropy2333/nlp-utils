@@ -1,18 +1,22 @@
+import warnings
+
+import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import matplotlib.pyplot as plt
-import warnings
-import cv2
-
-warnings.filterwarnings('ignore')
 
 
-def plot_col_group(df_train, col, key='label', label_names=None, transform=None, dpi=300, hist=False, kde=True, **kwargs):
+warnings.filterwarnings("ignore")
+
+
+def plot_col_group(
+    df_train, col, key="label", label_names=None, transform=None, dpi=300, hist=False, kde=True, **kwargs
+):
     """
     Plot distribution of a column in train data grouped by label.
     """
-    fig = plt.figure(dpi=dpi, **kwargs)
+    plt.figure(dpi=dpi, **kwargs)
     df_plot = transform(df_train[col]) if transform is not None else df_train[col]
     if label_names is None:
         label_names = df_train[key].unique()
@@ -25,14 +29,16 @@ def plot_col_train_test(df_train, df_test, col, transform=None, dpi=300, hist=Fa
     """
     Plot distribution of a column in train and test data.
     """
-    plot_col_multi_df([df_train, df_test], col, ['train', 'test'], transform=transform, dpi=dpi, hist=hist, kde=kde, **kwargs)
+    plot_col_multi_df(
+        [df_train, df_test], col, ["train", "test"], transform=transform, dpi=dpi, hist=hist, kde=kde, **kwargs
+    )
 
 
 def plot_col_multi_df(df_list, col, df_name_list=None, transform=None, dpi=300, hist=False, kde=True, **kwargs):
     """
     Plot distribution of a column in multiple dataframes.
     """
-    fig = plt.figure(dpi=dpi, **kwargs)
+    plt.figure(dpi=dpi, **kwargs)
     for df in df_list:
         df_plot = transform(df[col]) if transform is not None else df[col]
         sns.distplot(df_plot, hist=hist, kde=kde, **kwargs)
@@ -47,7 +53,7 @@ def read_cv_image(image_path):
     return image
 
 
-def visualize(image, titles=''):
+def visualize(image, titles=""):
     """
 
     example:
@@ -61,7 +67,7 @@ def visualize(image, titles=''):
         print(f"n_image: {n_image}, n_row: {n_row}, n_col: {n_col}")
         fig, (axes) = plt.subplots(n_row, n_col)
         fig.set_dpi(200)
-        titles = titles or [''] * len(image)
+        titles = titles or [""] * len(image)
         if n_row == 1 or n_col == 1:
             axes = np.array([axes])
         print(f"axes: {axes}")
@@ -69,8 +75,8 @@ def visualize(image, titles=''):
             print(f"i: {i}, i // n_row: {i // n_row}, i % n_col: {i % n_col} title: {title}")
             axes[i // n_col, i % n_col].imshow(img)
             axes[i // n_col, i % n_col].set_title(title)
-            axes[i // n_col, i % n_col].axis('off')
+            axes[i // n_col, i % n_col].axis("off")
     else:
         plt.imshow(image)
-        plt.axis('off')
+        plt.axis("off")
         plt.title(titles)

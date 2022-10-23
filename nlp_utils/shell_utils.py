@@ -1,7 +1,7 @@
-from subprocess import Popen, PIPE
+from subprocess import PIPE, Popen
 
 
-class ShellFactory():
+class ShellFactory:
     """
     Factory class for creating shell utilities.
 
@@ -12,11 +12,11 @@ class ShellFactory():
 
     @staticmethod
     def get_current_dir():
-        return 'pwd'
+        return "pwd"
 
     @staticmethod
     def format_date():
-        return 'date +%Y%m%d_%H%M%S'
+        return "date +%Y%m%d_%H%M%S"
 
     @staticmethod
     def find_process_by_pid(pid):
@@ -41,4 +41,4 @@ def execute_command(command):
     """
     process = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
     stdout, stderr = process.communicate()
-    return stdout.decode('utf-8').strip()
+    return stdout.decode("utf-8").strip()

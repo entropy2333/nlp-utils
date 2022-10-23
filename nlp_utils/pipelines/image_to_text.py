@@ -16,23 +16,32 @@ from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.progress import TQDMProgressBar
 from pytorch_lightning.callbacks.rich_model_summary import RichModelSummary
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.utilities import rank_zero_only
 from pytorch_lightning.strategies import DDPStrategy
+from pytorch_lightning.utilities import rank_zero_only
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
-from transformers import (AutoFeatureExtractor, AutoProcessor, AutoTokenizer, BertTokenizerFast, DonutProcessor,
-                          PreTrainedTokenizer, VisionEncoderDecoderConfig, VisionEncoderDecoderModel)
+from transformers import (
+    AutoFeatureExtractor,
+    AutoProcessor,
+    AutoTokenizer,
+    BertTokenizerFast,
+    DonutProcessor,
+    PreTrainedTokenizer,
+    VisionEncoderDecoderConfig,
+    VisionEncoderDecoderModel,
+)
 from transformers.optimization import get_linear_schedule_with_warmup
 from transformers.processing_utils import ProcessorMixin
 
 from .fgm import FGM
+
 
 torch.cuda.empty_cache()
 pl.seed_everything(42)
 
 
 class PyTorchDataModule(Dataset):
-    """  PyTorch Dataset class  """
+    """PyTorch Dataset class"""
 
     def __init__(
         self,
@@ -58,11 +67,11 @@ class PyTorchDataModule(Dataset):
         self.ignore_id = -100
 
     def __len__(self):
-        """ returns length of data """
+        """returns length of data"""
         return len(self.data)
 
     def __getitem__(self, index: int):
-        """ returns dictionary of input tensors to feed into OCR model"""
+        """returns dictionary of input tensors to feed into OCR model"""
 
         data_row = self.data.iloc[index]
         image_path = data_row["image_path"]
@@ -94,7 +103,7 @@ class PyTorchDataModule(Dataset):
 
 
 class LightningDataModule(pl.LightningDataModule):
-    """ PyTorch Lightning data class """
+    """PyTorch Lightning data class"""
 
     def __init__(
         self,
@@ -145,7 +154,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self):
-        """ training dataloader """
+        """training dataloader"""
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -154,7 +163,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
     def test_dataloader(self):
-        """ test dataloader """
+        """test dataloader"""
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
@@ -163,7 +172,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
-        """ validation dataloader """
+        """validation dataloader"""
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
@@ -173,7 +182,7 @@ class LightningDataModule(pl.LightningDataModule):
 
 
 class LightningModel(pl.LightningModule):
-    """ PyTorch Lightning Model class"""
+    """PyTorch Lightning Model class"""
 
     def __init__(
         self,
@@ -212,7 +221,7 @@ class LightningModel(pl.LightningModule):
         self.automatic_optimization = False if use_fgm else True
 
     def forward(self, pixel_values, decoder_input_ids, decoder_attention_mask, labels=None):
-        """ forward step """
+        """forward step"""
         output = self.model(
             pixel_values=pixel_values,
             decoder_input_ids=decoder_input_ids,
@@ -223,7 +232,7 @@ class LightningModel(pl.LightningModule):
         return output.loss, output.logits
 
     def training_step(self, batch, batch_size):
-        """ training step """
+        """training step"""
         pixel_values = batch["pixel_values"]
         decoder_input_ids = batch.get("decoder_input_ids", None)
         decoder_attention_mask = batch.get("decoder_attention_mask", None)
@@ -260,7 +269,7 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_size):
-        """ validation step """
+        """validation step"""
         pixel_values = batch["pixel_values"]
         decoder_input_ids = batch.get("decoder_input_ids", None)
         decoder_attention_mask = batch.get("decoder_attention_mask", None)
@@ -281,7 +290,7 @@ class LightningModel(pl.LightningModule):
         return {"val_loss": loss, "val_acc": accuracy}
 
     def test_step(self, batch, batch_size):
-        """ test step """
+        """test step"""
         pixel_values = batch["pixel_values"]
         decoder_input_ids = batch["decoder_input_ids"]
         decoder_attention_mask = batch["decoder_attention_mask"]
@@ -298,7 +307,7 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        """ configure optimizers """
+        """configure optimizers"""
         no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
             {
@@ -325,15 +334,17 @@ class LightningModel(pl.LightningModule):
 
     @rank_zero_only
     def training_epoch_end(self, training_step_outputs):
-        """ save tokenizer and model on epoch end """
+        """save tokenizer and model on epoch end"""
         self.average_training_loss = np.round(
             torch.mean(torch.stack([x["loss"] for x in training_step_outputs])).item(),
             4,
         )
-        path = f"{self.output_dir}/simpleocr-epoch-{self.current_epoch}-" + \
-                f"train-loss-{str(self.average_training_loss)}-" + \
-                f"val-loss-{str(self.average_validation_loss)}-" + \
-                f"val-acc-{str(self.average_validation_acc)}"
+        path = (
+            f"{self.output_dir}/simpleocr-epoch-{self.current_epoch}-"
+            + f"train-loss-{str(self.average_training_loss)}-"
+            + f"val-loss-{str(self.average_validation_loss)}-"
+            + f"val-acc-{str(self.average_validation_acc)}"
+        )
         if self.save_only_last_epoch:
             if self.current_epoch == self.trainer.max_epochs - 1:
                 self.tokenizer.save_pretrained(path)
@@ -360,10 +371,10 @@ class LightningModel(pl.LightningModule):
 
 
 class SimpleOCR:
-    """ Custom SimpleOCR class """
+    """Custom SimpleOCR class"""
 
     def __init__(self) -> None:
-        """ initiates SimpleOCR class """
+        """initiates SimpleOCR class"""
         pass
 
     def from_encoder_decoder_pretrained(
@@ -393,13 +404,13 @@ class SimpleOCR:
         self.model.decoder.resize_token_embeddings(len(self.tokenizer))
 
     def from_pretrained(
-            self,
-            model_type: str = "donut",
-            model_name: str = "naver-clova-ix/donut-base",
-            special_tokens: List[str] = [],
-            image_size: Union[List[int], Tuple[int, int]] = (1280, 960),
-            target_max_length: int = 128,
-            **kwargs,
+        self,
+        model_type: str = "donut",
+        model_name: str = "naver-clova-ix/donut-base",
+        special_tokens: List[str] = [],
+        image_size: Union[List[int], Tuple[int, int]] = (1280, 960),
+        target_max_length: int = 128,
+        **kwargs,
     ) -> None:
         """
         loads OCR Model model for training/finetuning
@@ -523,12 +534,14 @@ class SimpleOCR:
         # fit trainer
         trainer.fit(self.pl_module, self.data_module)
 
-    def load_model(self,
-                   model_type: str = "other",
-                   model_dir: str = "outputs",
-                   use_gpu: bool = False,
-                   special_tokens: list = [],
-                   **kwargs):
+    def load_model(
+        self,
+        model_type: str = "other",
+        model_dir: str = "outputs",
+        use_gpu: bool = False,
+        special_tokens: list = [],
+        **kwargs
+    ):
         """
         loads a checkpoint for inferencing/prediction
         Args:
@@ -537,7 +550,7 @@ class SimpleOCR:
             use_gpu (bool, optional): if True, model uses gpu for inferencing/prediction. Defaults to True.
         """
         if model_type == "donut":
-            #TODO: add support for donut
+            # TODO: add support for donut
             pass
         else:
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(model_dir)
@@ -615,7 +628,8 @@ class SimpleOCR:
                 g,
                 skip_special_tokens=skip_special_tokens,
                 clean_up_tokenization_spaces=clean_up_tokenization_spaces,
-            ) for g in generated_ids
+            )
+            for g in generated_ids
         ]
         return preds
 

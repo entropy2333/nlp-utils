@@ -1,5 +1,5 @@
-import time
 import datetime
+import time
 
 
 def get_current_datetime():
@@ -9,15 +9,15 @@ def get_current_datetime():
     return datetime.datetime.now()
 
 
-def get_current_date(fmt='%Y%m%d'):
+def get_current_date(fmt="%Y%m%d"):
     return get_current_datetime_str(fmt)
 
 
-def get_current_time(fmt='%H%M%S'):
+def get_current_time(fmt="%H%M%S"):
     return get_current_datetime_str(fmt)
 
 
-def get_current_datetime_str(fmt='%Y%m%d_%H%M%S'):
+def get_current_datetime_str(fmt="%Y%m%d_%H%M%S"):
     """
     Output: `20220623_185428`
     """

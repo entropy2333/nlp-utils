@@ -13,7 +13,7 @@ def seed_everything(seed=2022):
         seed: random seed
     """
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -43,7 +43,7 @@ def save_model(model, model_path, only_state_dict=True):
         model_path: path to save model
         only_state_dict: if True, only save model's state_dict, else save model itself
     """
-    model_to_save = model.module if hasattr(model, 'module') else model
+    model_to_save = model.module if hasattr(model, "module") else model
     if only_state_dict:
         torch.save(model_to_save.state_dict(), model_path)
     else:
@@ -58,6 +58,6 @@ def load_model(model, model_path):
         model: model to load
         model_path: path to load model
     """
-    model_to_load = model.module if hasattr(model, 'module') else model
+    model_to_load = model.module if hasattr(model, "module") else model
     model_to_load.load_state_dict(torch.load(model_path, map_location="cpu"), strict=False)
     return model

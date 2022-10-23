@@ -1,10 +1,11 @@
-import os
 import glob
-from omegaconf import OmegaConf
 import json
-import dill as pickle
+import os
 from pathlib import Path
-from typing import Union, List, Dict
+from typing import Dict, List, Union
+
+import dill as pickle
+from omegaconf import OmegaConf
 
 
 def load_json(json_file):
@@ -35,7 +36,7 @@ def load_json_by_line(data_path):
     return data
 
 
-def write2json_by_line(data: Union[List, Dict], data_path, data_name='data', ensure_ascii=False, indent=2):
+def write2json_by_line(data: Union[List, Dict], data_path, data_name="data", ensure_ascii=False, indent=2):
     """
     write data to jsonline file
     """
@@ -173,6 +174,7 @@ def get_config_from_yaml(default_conf_file: str = "./configs/default.yaml"):
         # set per-gpu batch size
         try:
             import torch
+
             num_devices = torch.cuda.device_count()
             for mode in ["train", "val"]:
                 new_batch_size = cfg[mode].batch_size // num_devices

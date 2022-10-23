@@ -21,11 +21,12 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.nn.modules.loss import KLDivLoss, NLLLoss
 import torch.utils.checkpoint
 from torch import nn
-from torch.nn import CrossEntropyLoss
-
+from torch.nn import CrossEntropyLoss, LayerNorm
+from torch.nn.modules.loss import KLDivLoss, NLLLoss
+from transformers import BartConfig as CPTConfig
+from transformers import BertConfig, BertModel
 from transformers.activations import ACT2FN
 from transformers.file_utils import (
     add_code_sample_docstrings,
@@ -45,10 +46,7 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
-from transformers import BartConfig as CPTConfig
-from transformers import BertModel, BertConfig
 
-from torch.nn import LayerNorm
 
 logger = logging.get_logger(__name__)
 
@@ -105,14 +103,17 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 
     return inverted_mask.masked_fill(inverted_mask.bool(), torch.finfo(dtype).min)
 
+
 def attention_mask_func(attention_scores, attention_mask):
     return attention_scores + attention_mask
+
 
 def init_method(std):
     def init_(tensor):
         return torch.nn.init.normal_(tensor, mean=0.0, std=std)
 
     return init_
+
 
 class CPTLearnedPositionalEmbedding(nn.Embedding):
     """
@@ -150,17 +151,17 @@ class CPTAttention(nn.Module):
         self.num_heads = num_heads
         self.dropout = dropout
         self.head_dim = embed_dim // num_heads
-        assert (
-            self.head_dim * num_heads == self.embed_dim
-        ), f"embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim} and `num_heads`: {num_heads})."
-        self.scaling = self.head_dim ** -0.5
+        assert self.head_dim * num_heads == self.embed_dim, (
+            f"embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim} and `num_heads`:"
+            f" {num_heads})."
+        )
+        self.scaling = self.head_dim**-0.5
         self.is_decoder = is_decoder
 
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.v_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.q_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
@@ -225,7 +226,10 @@ class CPTAttention(nn.Module):
             bsz * self.num_heads,
             tgt_len,
             src_len,
-        ), f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is {attn_weights.size()}"
+        ), (
+            f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is"
+            f" {attn_weights.size()}"
+        )
 
         if attention_mask is not None:
             assert attention_mask.size() == (
@@ -265,7 +269,10 @@ class CPTAttention(nn.Module):
             bsz * self.num_heads,
             tgt_len,
             self.head_dim,
-        ), f"`attn_output` should be of size {(bsz, self.num_heads, tgt_len, self.head_dim)}, but is {attn_output.size()}"
+        ), (
+            f"`attn_output` should be of size {(bsz, self.num_heads, tgt_len, self.head_dim)}, but is"
+            f" {attn_output.size()}"
+        )
 
         attn_output = (
             attn_output.view(bsz, self.num_heads, tgt_len, self.head_dim)
@@ -276,6 +283,7 @@ class CPTAttention(nn.Module):
         attn_output = self.out_proj(attn_output)
 
         return attn_output, attn_weights_reshaped, past_key_value
+
 
 class CPTDecoderLayer(nn.Module):
     def __init__(self, config: CPTConfig):
@@ -442,6 +450,7 @@ class CPTPretrainedModel(PreTrainedModel):
         }
         return dummy_inputs
 
+
 CPT_START_DOCSTRING = r"""
     This model inherits from :class:`~transformers.PreTrainedModel`. Check the superclass documentation for the generic
     methods the library implements for all its model (such as downloading or saving, resizing the input embeddings,
@@ -546,6 +555,7 @@ CPT_INPUTS_DOCSTRING = r"""
         return_dict (:obj:`bool`, `optional`):
             Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
 """
+
 
 class CPTDecoder(CPTPretrainedModel):
     """
@@ -743,7 +753,6 @@ class CPTDecoder(CPTPretrainedModel):
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             if getattr(self.config, "gradient_checkpointing", False) and self.training:
-
                 if use_cache:
                     logger.warn(
                         "`use_cache=True` is incompatible with `config.gradient_checkpointing=True`. Setting "
@@ -770,7 +779,6 @@ class CPTDecoder(CPTPretrainedModel):
                     None,
                 )
             else:
-
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=attention_mask,
@@ -851,8 +859,9 @@ class CPTModel(CPTPretrainedModel):
                 self.encoder = encoder
 
             def forward(self, *args, **kwargs):
-                kwargs['output_hidden_states'] = True
+                kwargs["output_hidden_states"] = True
                 return self.encoder(*args, **kwargs)
+
         return _Encoder(self.encoder)
 
     def get_decoder(self):
@@ -882,7 +891,6 @@ class CPTModel(CPTPretrainedModel):
         output_hidden_states=None,
         return_dict=None,
     ):
-
         # different to other models, CPT automatically creates decoder_input_ids from
         # input_ids if no decoder_input_ids are provided
         if decoder_input_ids is None and decoder_inputs_embeds is None:
@@ -1107,7 +1115,7 @@ class CPTForConditionalGeneration(CPTPretrainedModel):
         expand_size: int = 1,
         is_encoder_decoder: bool = False,
         attention_mask: torch.LongTensor = None,
-        encoder_outputs = None,
+        encoder_outputs=None,
         **model_kwargs,
     ):
         expanded_return_idx = (
@@ -1125,8 +1133,9 @@ class CPTForConditionalGeneration(CPTPretrainedModel):
         if is_encoder_decoder:
             assert encoder_outputs is not None
             device = encoder_outputs.last_hidden_state.device
-            encoder_outputs["hidden_states"] = tuple(h.index_select(0, expanded_return_idx.to(device)) \
-                 for h in encoder_outputs["hidden_states"])
+            encoder_outputs["hidden_states"] = tuple(
+                h.index_select(0, expanded_return_idx.to(device)) for h in encoder_outputs["hidden_states"]
+            )
             model_kwargs["encoder_outputs"] = encoder_outputs
         return input_ids, model_kwargs
 
@@ -1155,15 +1164,15 @@ class CPTForSequenceClassification(CPTPretrainedModel):
     def __init__(self, config: CPTConfig, cls_mode=1, **kwargs):
         super().__init__(config, **kwargs)
         self.model = CPTModel(config)
-        cls_mode = getattr(config, 'cls_mode', cls_mode)
+        cls_mode = getattr(config, "cls_mode", cls_mode)
         if cls_mode == 1:
-            logger.info('Encoder for classification.')
+            logger.info("Encoder for classification.")
             cls_dim = config.d_model
         elif cls_mode == 2:
-            logger.info('Decoder for classification.')
+            logger.info("Decoder for classification.")
             cls_dim = config.d_model
         elif cls_mode == 3:
-            logger.info('Both encoder & decoder for classification.')
+            logger.info("Both encoder & decoder for classification.")
             cls_dim = config.d_model * 2
         else:
             raise NotImplementedError
@@ -1241,9 +1250,7 @@ class CPTForSequenceClassification(CPTPretrainedModel):
 
         if len(torch.unique(eos_mask.sum(1))) > 1:
             raise ValueError("All examples must have the same number of <eos> tokens.")
-        dec_rep = hidden_states[eos_mask, :].view(hidden_states.size(0), -1, hidden_states.size(-1))[
-            :, -1, :
-        ]
+        dec_rep = hidden_states[eos_mask, :].view(hidden_states.size(0), -1, hidden_states.size(-1))[:, -1, :]
 
         if self.cls_mode == 1:
             logits = self.cls_head(enc_rep)
@@ -1292,15 +1299,15 @@ class CPTForQuestionAnswering(CPTPretrainedModel):
 
         self.model = CPTModel(config)
 
-        cls_mode = getattr(config, 'cls_mode', cls_mode)
+        cls_mode = getattr(config, "cls_mode", cls_mode)
         if cls_mode == 1:
-            logger.info('Encoder for classification.')
+            logger.info("Encoder for classification.")
             cls_dim = config.d_model
         elif cls_mode == 2:
-            logger.info('Decoder for classification.')
+            logger.info("Decoder for classification.")
             cls_dim = config.d_model
         elif cls_mode == 3:
-            logger.info('Both encoder & decoder for classification.')
+            logger.info("Both encoder & decoder for classification.")
             cls_dim = config.d_model * 2
         else:
             raise NotImplementedError
@@ -1431,6 +1438,7 @@ class CPTForMaskedLM(CPTPretrainedModel):
         r"decoder\.version",
         r"lm_head\.weight",
     ]
+
     def __init__(self, config, **kwargs):
         super().__init__(config)
         self.model = CPTModel(config)

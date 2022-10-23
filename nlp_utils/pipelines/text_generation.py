@@ -15,7 +15,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
-from transformers import (AutoModelWithLMHead, AutoTokenizer, BartForConditionalGeneration)
+from transformers import AutoModelWithLMHead, AutoTokenizer, BartForConditionalGeneration
 from transformers import BertTokenizerFast as BartTokenizer
 from transformers import ByT5Tokenizer, MT5ForConditionalGeneration
 from transformers import MT5TokenizerFast as MT5Tokenizer
@@ -26,12 +26,13 @@ from transformers.optimization import get_linear_schedule_with_warmup
 from .fgm import FGM
 from .modeling_cpt import CPTForConditionalGeneration
 
+
 torch.cuda.empty_cache()
 pl.seed_everything(42)
 
 
 class PyTorchDataModule(Dataset):
-    """  PyTorch Dataset class  """
+    """PyTorch Dataset class"""
 
     def __init__(
         self,
@@ -54,11 +55,11 @@ class PyTorchDataModule(Dataset):
         self.target_max_token_len = target_max_token_len
 
     def __len__(self):
-        """ returns length of data """
+        """returns length of data"""
         return len(self.data)
 
     def __getitem__(self, index: int):
-        """ returns dictionary of input tensors to feed into T5/MT5 model"""
+        """returns dictionary of input tensors to feed into T5/MT5 model"""
 
         data_row = self.data.iloc[index]
         source_text = data_row["source_text"]
@@ -95,7 +96,7 @@ class PyTorchDataModule(Dataset):
 
 
 class LightningDataModule(pl.LightningDataModule):
-    """ PyTorch Lightning data class """
+    """PyTorch Lightning data class"""
 
     def __init__(
         self,
@@ -142,7 +143,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self):
-        """ training dataloader """
+        """training dataloader"""
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -151,7 +152,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
     def test_dataloader(self):
-        """ test dataloader """
+        """test dataloader"""
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
@@ -160,7 +161,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
-        """ validation dataloader """
+        """validation dataloader"""
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
@@ -170,7 +171,7 @@ class LightningDataModule(pl.LightningDataModule):
 
 
 class LightningModel(pl.LightningModule):
-    """ PyTorch Lightning Model class"""
+    """PyTorch Lightning Model class"""
 
     def __init__(
         self,
@@ -205,7 +206,7 @@ class LightningModel(pl.LightningModule):
         self.automatic_optimization = False if use_fgm else True
 
     def forward(self, input_ids, attention_mask, decoder_attention_mask, labels=None):
-        """ forward step """
+        """forward step"""
         output = self.model(
             input_ids,
             attention_mask=attention_mask,
@@ -216,7 +217,7 @@ class LightningModel(pl.LightningModule):
         return output.loss, output.logits
 
     def training_step(self, batch, batch_size):
-        """ training step """
+        """training step"""
         input_ids = batch["source_text_input_ids"]
         attention_mask = batch["source_text_attention_mask"]
         labels = batch["labels"]
@@ -253,7 +254,7 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_size):
-        """ validation step """
+        """validation step"""
         input_ids = batch["source_text_input_ids"]
         attention_mask = batch["source_text_attention_mask"]
         labels = batch["labels"]
@@ -270,7 +271,7 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_size):
-        """ test step """
+        """test step"""
         input_ids = batch["source_text_input_ids"]
         attention_mask = batch["source_text_attention_mask"]
         labels = batch["labels"]
@@ -287,7 +288,7 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        """ configure optimizers """
+        """configure optimizers"""
         no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
             {
@@ -313,7 +314,7 @@ class LightningModel(pl.LightningModule):
         return [optimizer], [sceduler]
 
     def training_epoch_end(self, training_step_outputs):
-        """ save tokenizer and model on epoch end """
+        """save tokenizer and model on epoch end"""
         self.average_training_loss = np.round(
             torch.mean(torch.stack([x["loss"] for x in training_step_outputs])).item(),
             4,
@@ -336,10 +337,10 @@ class LightningModel(pl.LightningModule):
 
 
 class SimpleT5:
-    """ Custom SimpleT5 class """
+    """Custom SimpleT5 class"""
 
     def __init__(self) -> None:
-        """ initiates SimpleT5 class """
+        """initiates SimpleT5 class"""
         pass
 
     def from_pretrained(self, model_type="t5", model_name="t5-base", special_tokens=[], **kwargs) -> None:
@@ -356,13 +357,19 @@ class SimpleT5:
             self.tokenizer = MT5Tokenizer.from_pretrained(f"{model_name}", add_special_tokens=special_tokens, **kwargs)
             self.model = MT5ForConditionalGeneration.from_pretrained(f"{model_name}", return_dict=True)
         elif model_type == "byt5":
-            self.tokenizer = ByT5Tokenizer.from_pretrained(f"{model_name}", add_special_tokens=special_tokens, **kwargs)
+            self.tokenizer = ByT5Tokenizer.from_pretrained(
+                f"{model_name}", add_special_tokens=special_tokens, **kwargs
+            )
             self.model = T5ForConditionalGeneration.from_pretrained(f"{model_name}", return_dict=True)
         elif model_type == "bart":
-            self.tokenizer = BartTokenizer.from_pretrained(f"{model_name}", add_special_tokens=special_tokens, **kwargs)
+            self.tokenizer = BartTokenizer.from_pretrained(
+                f"{model_name}", add_special_tokens=special_tokens, **kwargs
+            )
             self.model = BartForConditionalGeneration.from_pretrained(f"{model_name}", return_dict=True)
         elif model_type == "cpt":
-            self.tokenizer = BartTokenizer.from_pretrained(f"{model_name}", add_special_tokens=special_tokens, **kwargs)
+            self.tokenizer = BartTokenizer.from_pretrained(
+                f"{model_name}", add_special_tokens=special_tokens, **kwargs
+            )
             self.model = CPTForConditionalGeneration.from_pretrained(f"{model_name}", return_dict=True)
         self.model.resize_token_embeddings(len(self.tokenizer))
 
@@ -466,12 +473,14 @@ class SimpleT5:
         # fit trainer
         trainer.fit(self.T5Model, self.data_module)
 
-    def load_model(self,
-                   model_type: str = "t5",
-                   model_dir: str = "outputs",
-                   use_gpu: bool = False,
-                   special_tokens: list = [],
-                   **kwargs):
+    def load_model(
+        self,
+        model_type: str = "t5",
+        model_dir: str = "outputs",
+        use_gpu: bool = False,
+        special_tokens: list = [],
+        **kwargs
+    ):
         """
         loads a checkpoint for inferencing/prediction
         Args:
@@ -557,7 +566,8 @@ class SimpleT5:
                 g,
                 skip_special_tokens=skip_special_tokens,
                 clean_up_tokenization_spaces=clean_up_tokenization_spaces,
-            ) for g in generated_ids
+            )
+            for g in generated_ids
         ]
         return preds
 
@@ -595,13 +605,15 @@ class SimpleT5:
         Returns:
             list[str]: returns predictions
         """
-        inputs = self.tokenizer.batch_encode_plus(source_text,
-                                                  return_tensors="pt",
-                                                  padding="longest",
-                                                  truncation=True,
-                                                  max_length=max_length,
-                                                  add_special_tokens=True,
-                                                  return_token_type_ids=False)
+        inputs = self.tokenizer.batch_encode_plus(
+            source_text,
+            return_tensors="pt",
+            padding="longest",
+            truncation=True,
+            max_length=max_length,
+            add_special_tokens=True,
+            return_token_type_ids=False,
+        )
         inputs = inputs.to(self.device)
 
         generated_ids = self.model.generate(
@@ -616,7 +628,7 @@ class SimpleT5:
             do_sample=do_sample,
             num_return_sequences=num_return_sequences,
         )
-        
+
         preds = self.tokenizer.batch_decode(
             generated_ids,
             skip_special_tokens=skip_special_tokens,
