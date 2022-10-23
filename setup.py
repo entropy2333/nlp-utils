@@ -6,16 +6,34 @@ import os
 
 from setuptools import find_packages, setup
 
-REQUIRED_PKGS = ["tqdm", "dill", "omegaconf"]
+
+install_requires = [
+    "tqdm",
+    "dill",
+    "omegaconf",
+    "numpy",
+    "pandas",
+    "seaborn",
+    "matplotlib",
+    "scikit-learn",
+]
+
+extras = {}
+extras["dev"] = [
+    "black",
+    "flake8",
+    "isort",
+]
 
 setup(
     name="nlp-utils",
-    version=
-    "0.1.1dev0",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
+    version="0.1.1dev0",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
     description="Utils for NLP.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
-    install_requires=REQUIRED_PKGS,
+    keywords="NLP deep learning transformer pytorch BERT",
+    install_requires=install_requires,
+    extras_requires=extras,
     python_requires=">=3.7.0",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -28,9 +46,7 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    keywords="NLP",
     zip_safe=False,  # Required for mypy to find the py.typed file
 )
