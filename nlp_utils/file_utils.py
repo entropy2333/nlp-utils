@@ -55,7 +55,10 @@ def walk_dir(dir_path, suffix=".jpg", recursive=True):
     """
     walk all files in the dir_path with suffix
     """
-    file_list = glob.glob(os.path.join(dir_path, "*" + suffix), recursive=recursive)
+    if recursive:
+        file_list = glob.glob(os.path.join(dir_path, "**", f"*{suffix}"), recursive=True)
+    else:
+        file_list = glob.glob(os.path.join(dir_path, f"*{suffix}"), recursive=False)
     print(f"{len(file_list)} files found in {dir_path}")
     return file_list
 
