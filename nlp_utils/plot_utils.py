@@ -1,3 +1,4 @@
+import math
 import warnings
 
 import cv2
@@ -5,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from loguru import logger
 
 
 warnings.filterwarnings("ignore")
@@ -53,29 +55,43 @@ def read_cv_image(image_path):
     return image
 
 
-def visualize(image, titles=""):
+def visualize(image, titles="", nrows=None, ncols=None):
     """
 
     example:
     >>> visualize(image, titles='image')
     >>> visualize([image, aug_image], titles=['image', 'aug_image'])
     """
+
+    def get_nearest_factor(n: int):
+        assert n > 0
+        x = math.ceil(math.sqrt(n))
+        y = x
+        while x * y != n:
+            x += 1
+            y = int(n / x)
+        return x, y
+
     if isinstance(image, list):
         n_image = len(image)
-        n_row = int(n_image**0.5)
-        n_col = int(n_image / n_row)
-        print(f"n_image: {n_image}, n_row: {n_row}, n_col: {n_col}")
-        fig, (axes) = plt.subplots(n_row, n_col)
+        if nrows is None or ncols is None:
+            nrows, ncols = get_nearest_factor(n_image)
+            # make sure ncols >= nrows
+            if nrows > ncols:
+                nrows, ncols = ncols, nrows
+        assert nrows * ncols == n_image
+        logger.info(f"n_image: {n_image}, nrows: {nrows}, ncols: {ncols}")
+        fig, (axes) = plt.subplots(nrows, ncols)
         fig.set_dpi(200)
         titles = titles or [""] * len(image)
-        if n_row == 1 or n_col == 1:
+        if nrows == 1 or ncols == 1:
             axes = np.array([axes])
-        print(f"axes: {axes}")
+        logger.info(f"axes: {axes}")
         for i, (img, title) in enumerate(zip(image, titles)):
-            print(f"i: {i}, i // n_row: {i // n_row}, i % n_col: {i % n_col} title: {title}")
-            axes[i // n_col, i % n_col].imshow(img)
-            axes[i // n_col, i % n_col].set_title(title)
-            axes[i // n_col, i % n_col].axis("off")
+            logger.info(f"i: {i}, i // nrows: {i // nrows}, i % ncols: {i % ncols} title: {title}")
+            axes[i // ncols, i % ncols].imshow(img)
+            axes[i // ncols, i % ncols].set_title(title)
+            axes[i // ncols, i % ncols].axis("off")
     else:
         plt.imshow(image)
         plt.axis("off")

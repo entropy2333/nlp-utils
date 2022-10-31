@@ -5,20 +5,21 @@ from pathlib import Path
 from typing import Dict, List, Union
 
 import dill as pickle
+from loguru import logger
 from omegaconf import OmegaConf
 
 
 def load_json(json_file):
     with open(json_file, "r", encoding="utf8") as fin:
         data = json.load(fin)
-    print(f"load {len(data)} from {json_file}")
+    logger.info(f"load {len(data)} from {json_file}")
     return data
 
 
 def write2json(data, data_path, data_name="data", ensure_ascii=False, indent=2):
     with open(data_path, "w", encoding="utf-8") as fout:
         fout.write(json.dumps(data, ensure_ascii=ensure_ascii, indent=indent))
-    print(f"{data_name}({len(data)}) saved into {data_path}")
+    logger.info(f"{data_name}({len(data)}) saved into {data_path}")
 
 
 def load_json_by_line(data_path):
@@ -29,10 +30,10 @@ def load_json_by_line(data_path):
     with open(data_path, "r", encoding="utf8") as f:
         reader = f.readlines()
         for line in reader:
-            # print(line)
+            # logger.info(line)
             sample = json.loads(line.strip())
             data.append(sample)
-    print(f"load {len(data)} from {data_path}")
+    logger.info(f"load {len(data)} from {data_path}")
     return data
 
 
@@ -49,7 +50,7 @@ def write2json_by_line(data: Union[List, Dict], data_path, data_name="data", ens
             for line in data:
                 fout.write(json.dumps(line, ensure_ascii=ensure_ascii, indent=indent))
                 fout.write("\n")
-        print(f"{data_name}({len(data)}) saved into {data_path}")
+        logger.info(f"{data_name}({len(data)}) saved into {data_path}")
 
 
 def walk_dir(dir_path, suffix=".jpg", recursive=True):
@@ -60,7 +61,7 @@ def walk_dir(dir_path, suffix=".jpg", recursive=True):
         file_list = glob.glob(os.path.join(dir_path, "**", f"*{suffix}"), recursive=True)
     else:
         file_list = glob.glob(os.path.join(dir_path, f"*{suffix}"), recursive=False)
-    print(f"{len(file_list)} files found in {dir_path}")
+    logger.info(f"{len(file_list)} files found in {dir_path}")
     return file_list
 
 
@@ -91,7 +92,7 @@ def read_file_by_line_lambda(file_path, line_lambda=lambda x: x, condition=lambd
             if not condition(line):
                 continue
             data.append(line_lambda(line))
-    print(f"load {len(data)} from {file_path}")
+    logger.info(f"load {len(data)} from {file_path}")
     return data
 
 
@@ -101,7 +102,7 @@ def load_pickle(file_path):
     """
     with open(file_path, "rb") as fin:
         data = pickle.load(fin)
-    print(f"load {len(data)} from {file_path}")
+    logger.info(f"load {len(data)} from {file_path}")
     return data
 
 
@@ -111,7 +112,7 @@ def write2pickle(data, file_path, data_name="data"):
     """
     with open(file_path, "wb") as fout:
         pickle.dump(data, fout)
-    print(f"{data_name}({len(data)}) saved into {file_path}")
+    logger.info(f"{data_name}({len(data)}) saved into {file_path}")
     return data
 
 
@@ -138,7 +139,7 @@ def load_ner_char_file(file_path, sep="\t"):
                 tag = "I" + tag[1:]
             sent.append((char, tag))
 
-    print(f"load {len(ner_data)} from {file_path}")
+    logger.info(f"load {len(ner_data)} from {file_path}")
     return ner_data
 
 
@@ -180,7 +181,7 @@ def get_config_from_yaml(default_conf_file: str = "./configs/default.yaml"):
                 new_batch_size = cfg[mode].batch_size // num_devices
                 cfg[mode].batch_size = new_batch_size
         except Exception as e:
-            print(e)
+            logger.info(e)
             pass
 
     _check_config(cfg)

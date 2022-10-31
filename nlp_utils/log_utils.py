@@ -1,5 +1,7 @@
 import logging
 
+from loguru import logger
+
 
 str2log_level = {
     "DEBUG": logging.DEBUG,
@@ -46,9 +48,25 @@ def setup_logger(log_file=None, log_level="INFO", backend="loguru"):
     if isinstance(log_level, str):
         log_level = str2log_level[log_level.upper()]
     if backend == "loguru":
-        logger = setup_loguru_logger(log_file, log_level)
+        _logger = setup_loguru_logger(log_file, log_level)
     elif backend == "logging":
-        logger = setup_logging_logger(log_file, log_level)
+        _logger = setup_logging_logger(log_file, log_level)
     else:
         raise ValueError("Unsupported backend: {}".format(backend))
-    return logger
+    return _logger
+
+
+def enable_loguru_logger():
+    logger.enable("nlp_utils")
+
+
+def disable_loguru_logger():
+    logger.disable("nlp_utils")
+
+
+def enable_logger():
+    enable_loguru_logger()
+
+
+def disable_logger():
+    disable_loguru_logger()

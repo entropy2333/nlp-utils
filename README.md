@@ -17,6 +17,14 @@ pip install -e .
 
 ## Quick Start
 
+load & save json
+
 ```python
-from nlp_utils import load_json
+from nlp_utils import load_json, write2json
+```
+
+logger ([loguru](https://github.com/Delgan/loguru))
+
+```python
+from nlp_utils import logger, enable_logger, disable_logger
 ```
