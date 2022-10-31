@@ -333,6 +333,11 @@ class LightningModel(pl.LightningModule):
         return [optimizer], [sceduler]
 
     @rank_zero_only
+    def _save_checkpoint(self, path):
+        self.tokenizer.save_pretrained(path)
+        self.feature_extractor.save_pretrained(path)
+        self.model.save_pretrained(path)
+
     def training_epoch_end(self, training_step_outputs):
         """save tokenizer and model on epoch end"""
         self.average_training_loss = np.round(
@@ -345,15 +350,12 @@ class LightningModel(pl.LightningModule):
             + f"val-loss-{str(self.average_validation_loss)}-"
             + f"val-acc-{str(self.average_validation_acc)}"
         )
+
         if self.save_only_last_epoch:
             if self.current_epoch == self.trainer.max_epochs - 1:
-                self.tokenizer.save_pretrained(path)
-                self.feature_extractor.save_pretrained(path)
-                self.model.save_pretrained(path)
+                self._save_checkpoint(path)
         else:
-            self.tokenizer.save_pretrained(path)
-            self.feature_extractor.save_pretrained(path)
-            self.model.save_pretrained(path)
+            self._save_checkpoint(path)
 
     def validation_epoch_end(self, validation_step_outputs):
         _loss = [x["val_loss"].cpu() for x in validation_step_outputs]
@@ -398,6 +400,24 @@ class SimpleOCR:
             self.tokenizer = BertTokenizerFast.from_pretrained(decoder_name)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(decoder_name)
+        self.model.config.decoder_start_token_id = self.tokenizer.cls_token_id
+        self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        self.model.config.vocab_size = self.model.config.decoder.vocab_size
+        self.model.decoder.resize_token_embeddings(len(self.tokenizer))
+
+    def from_encoder_decoder_configs(self, encoder_config, decoder_config):
+        """
+        load pretrained encoder and decoder
+        Args:
+            encoder_config (str, optional): encoder config.
+            decoder_config (str, optional): decoder config.
+        """
+        config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(encoder_config, decoder_config)
+        self.model = VisionEncoderDecoderModel(config=config)
+        self.feature_extractor = AutoFeatureExtractor.from_pretrained(
+            encoder_config.model_name_or_path, config=encoder_config
+        )
+        self.tokenizer = BertTokenizerFast.from_pretrained(decoder_config.model_name_or_path)
         self.model.config.decoder_start_token_id = self.tokenizer.cls_token_id
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
         self.model.config.vocab_size = self.model.config.decoder.vocab_size
