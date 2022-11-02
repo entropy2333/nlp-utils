@@ -23,8 +23,8 @@ from transformers import PreTrainedTokenizer, T5ForConditionalGeneration
 from transformers import T5TokenizerFast as T5Tokenizer
 from transformers.optimization import get_linear_schedule_with_warmup
 
-from .fgm import FGM
-from .modeling_cpt import CPTForConditionalGeneration
+from ..models.cpt.modeling_cpt import CPTForConditionalGeneration
+from ..models.fgm import FGM
 
 
 torch.cuda.empty_cache()

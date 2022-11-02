@@ -33,7 +33,7 @@ from transformers import (
 from transformers.optimization import get_linear_schedule_with_warmup
 from transformers.processing_utils import ProcessorMixin
 
-from .fgm import FGM
+from ..models.fgm import FGM
 
 
 torch.cuda.empty_cache()
