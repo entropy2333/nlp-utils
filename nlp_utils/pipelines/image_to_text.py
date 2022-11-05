@@ -24,6 +24,7 @@ from pytorch_lightning.utilities import rank_zero_only
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
 from transformers import (
+    AutoConfig,
     AutoFeatureExtractor,
     AutoProcessor,
     AutoTokenizer,
@@ -385,20 +386,39 @@ class SimpleOCR:
         self.model.config.vocab_size = self.model.config.decoder.vocab_size
         self.model.decoder.resize_token_embeddings(len(self.tokenizer))
 
-    def from_encoder_decoder_configs(self, encoder_config, decoder_config):
+    def from_encoder_decoder_configs(
+        self,
+        encoder_config: AutoConfig,
+        decoder_config: AutoConfig,
+        feature_extractor: AutoFeatureExtractor = None,
+        tokenizer: AutoTokenizer = None,
+    ):
         """
         load pretrained encoder and decoder
         Args:
             encoder_config (str, optional): encoder config.
             decoder_config (str, optional): decoder config.
+            feature_extractor (optional): feature extractor.
+            tokenizer (optional): tokenizer.
         """
+        if feature_extractor is not None:
+            self.feature_extractor = feature_extractor
+        else:
+            self.feature_extractor = AutoFeatureExtractor.from_pretrained(
+                encoder_config.model_name_or_path, config=encoder_config
+            )
+            self.feature_extractor.size = encoder_config.image_size
+
+        if tokenizer is not None:
+            self.tokenizer = tokenizer
+        else:
+            self.tokenizer = BertTokenizerFast.from_pretrained(decoder_config.model_name_or_path)
+
         config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(encoder_config, decoder_config)
         self.model = VisionEncoderDecoderModel(config=config)
-        self.feature_extractor = AutoFeatureExtractor.from_pretrained(
-            encoder_config.model_name_or_path, config=encoder_config
-        )
-        self.tokenizer = BertTokenizerFast.from_pretrained(decoder_config.model_name_or_path)
-        self.model.config.decoder_start_token_id = self.tokenizer.cls_token_id
+        self.model.config.decoder_start_token_id = self.tokenizer.bos_token_id
+        self.model.config.bos_token_id = self.tokenizer.bos_token_id
+        self.model.config.eos_token_id = self.tokenizer.eos_token_id
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
         self.model.config.vocab_size = self.model.config.decoder.vocab_size
         self.model.decoder.resize_token_embeddings(len(self.tokenizer))
@@ -711,3 +731,97 @@ class SimpleOCR:
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
         )
         return preds
+
+
+def predict_main(args, **kwargs):
+    """
+    main function for prediction
+    """
+    from pathlib import Path
+
+    import pandas as pd
+
+    from ..file_utils import walk_dir, write2json, write2json_by_line
+    from ..log_utils import logger
+    from ..tqdm import disable_progress_bar, tqdm
+
+    if Path(args.image_dir_or_path).is_dir():
+        image_list = walk_dir(args.image_dir_or_path, suffix=args.image_suffix)
+    else:
+        image_list = [args.image_dir_or_path]
+
+    model = SimpleOCR()
+    model.load_model(model_dir=args.model_name_or_path, use_gpu=args.use_gpu)
+
+    logger.info(f"Load model from {args.model_name_or_path}")
+
+    if args.disable_tqdm:
+        disable_progress_bar()
+
+    prediction_result = []
+    batch_size = min(args.batch_size, len(image_list))
+    logger.info(f"Predicting with batch_size={batch_size}")
+    for i in tqdm(range(0, len(image_list), batch_size), desc="Predicting"):
+        batch_image_list = image_list[i : i + batch_size]
+        batch_prediction = model.batch_predict(
+            source_images=batch_image_list,
+            max_length=args.max_length,
+            num_beams=args.num_beams,
+            **kwargs,
+        )
+        batch_prediction = [x.replace(" ", "") for x in batch_prediction]
+        for image_path, prediction in zip(batch_image_list, batch_prediction):
+            prediction_result.append({"image_path": image_path, "prediction": prediction})
+
+    output_file_name = f"prediction.{args.output_file_type}"
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file_path = output_dir / output_file_name
+    if args.output_file_type == "csv":
+        pd.DataFrame(prediction_result).to_csv(str(output_file_path), index=False, sep="\t")
+    elif args.output_file_type == "jsonl":
+        write2json_by_line(prediction_result, output_file_path, output_file_name)
+    elif args.output_file_type == "json":
+        write2json(prediction_result, output_file_path, output_file_name)
+    else:
+        raise ValueError(f"Unknown output_file_type: {args.output_file_type}")
+    logger.info(f"Prediction result saved to {output_file_path}")
+
+
+if __name__ == "__main__":
+    """
+    Usage:
+        export CUDA_VISIBLE_DEVICES=0
+        python -m nlp_utils.pipelines.image_to_text \
+            --image_dir_or_path /path/to/image_dir_or_path \
+            --model_name_or_path /path/to/model_dir \
+            --output_dir /path/to/output_dir \
+            --batch_size 32 --use_gpu --disable_tqdm
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser()
+
+    # input args
+    parser.add_argument("--image_dir_or_path", "-i", type=str, required=True)
+    parser.add_argument("--image_suffix", type=str, default=".jpg")
+    parser.add_argument("--ground_truth_file", type=str, required=False)
+
+    # model args
+    parser.add_argument("--model_name_or_path", "-m", type=str, required=True)
+
+    # output args
+    parser.add_argument("--output_dir", "-o", type=str, required=True)
+    parser.add_argument("--output_file_type", type=str, default="csv")
+
+    # predict args
+    parser.add_argument("--max_length", type=int, default=32)
+    parser.add_argument("--num_beams", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--use_gpu", default=True, action="store_true")
+    parser.add_argument("--disable_tqdm", default=False, action="store_true")
+
+    args, left_argv = parser.parse_known_args()
+    # TODO: parse left_argv
+    predict_main(args)
