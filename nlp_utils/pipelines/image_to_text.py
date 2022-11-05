@@ -4,17 +4,20 @@ reference:
 """
 
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
-from pytorch_lightning.callbacks.progress import TQDMProgressBar
-from pytorch_lightning.callbacks.rich_model_summary import RichModelSummary
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+    RichModelSummary,
+    TQDMProgressBar,
+)
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning.utilities import rank_zero_only
@@ -30,14 +33,10 @@ from transformers import (
     VisionEncoderDecoderConfig,
     VisionEncoderDecoderModel,
 )
-from transformers.optimization import get_linear_schedule_with_warmup
 from transformers.processing_utils import ProcessorMixin
 
 from ..models.fgm import FGM
-
-
-torch.cuda.empty_cache()
-pl.seed_everything(42)
+from .base_model import BaseLightningModel
 
 
 class PyTorchDataModule(Dataset):
@@ -49,6 +48,7 @@ class PyTorchDataModule(Dataset):
         feature_extractor: AutoFeatureExtractor,
         tokenizer: AutoTokenizer,
         image_dir: str = ".",
+        image_transform: Optional[Callable] = None,
         target_max_token_len: int = 512,
     ):
         """
@@ -63,6 +63,7 @@ class PyTorchDataModule(Dataset):
         self.tokenizer = tokenizer
         self.data = data
         self.image_dir = image_dir
+        self.image_transform = image_transform
         self.target_max_token_len = target_max_token_len
         self.ignore_id = -100
 
@@ -77,8 +78,14 @@ class PyTorchDataModule(Dataset):
         image_path = data_row["image_path"]
 
         image = cv2.imread(str(Path(self.image_dir) / image_path))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # apply image transform if provided
+        if self.image_transform is not None:
+            image = self.image_transform(image=image)["image"]
+
         pixel_values = self.feature_extractor(
-            cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+            image,
             return_tensors="pt",
         ).pixel_values
 
@@ -111,6 +118,7 @@ class LightningDataModule(pl.LightningDataModule):
         test_df: pd.DataFrame,
         feature_extractor: AutoFeatureExtractor,
         tokenizer: AutoTokenizer,
+        image_transform: Optional[Callable] = None,
         image_dir: str = ".",
         batch_size: int = 4,
         target_max_token_len: int = 512,
@@ -131,6 +139,7 @@ class LightningDataModule(pl.LightningDataModule):
         self.train_df = train_df
         self.test_df = test_df
         self.batch_size = batch_size
+        self.image_transform = image_transform
         self.feature_extractor = feature_extractor
         self.tokenizer = tokenizer
         self.image_dir = image_dir
@@ -139,18 +148,20 @@ class LightningDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         self.train_dataset = PyTorchDataModule(
-            self.train_df,
-            self.feature_extractor,
-            self.tokenizer,
-            self.image_dir,
-            self.target_max_token_len,
+            data=self.train_df,
+            feature_extractor=self.feature_extractor,
+            tokenizer=self.tokenizer,
+            image_dir=self.image_dir,
+            image_transform=self.image_transform,
+            target_max_token_len=self.target_max_token_len,
         )
         self.test_dataset = PyTorchDataModule(
-            self.test_df,
-            self.feature_extractor,
-            self.tokenizer,
-            self.image_dir,
-            self.target_max_token_len,
+            data=self.test_df,
+            feature_extractor=self.feature_extractor,
+            tokenizer=self.tokenizer,
+            image_dir=self.image_dir,
+            image_transform=None,  # no need to augment validation data
+            target_max_token_len=self.target_max_token_len,
         )
 
     def train_dataloader(self):
@@ -181,7 +192,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
 
-class LightningModel(pl.LightningModule):
+class LightningModel(BaseLightningModel):
     """PyTorch Lightning Model class"""
 
     def __init__(
@@ -190,7 +201,6 @@ class LightningModel(pl.LightningModule):
         tokenizer,
         model,
         output_dir: str = "outputs",
-        save_only_last_epoch: bool = False,
         learning_rate: float = 1e-4,
         warmup_ratio: float = 0.1,
         num_training_steps: int = 1000,
@@ -203,7 +213,6 @@ class LightningModel(pl.LightningModule):
             tokenizer : PreTrainedTokenizer
             model : PreTrainedModel
             output_dir (str, optional): output directory to save model checkpoints. Defaults to "outputs".
-            save_only_last_epoch (bool, optional): If True, save just the last epoch else models are saved for every epoch
         """
         super().__init__()
         self.model = model
@@ -213,7 +222,6 @@ class LightningModel(pl.LightningModule):
         self.average_training_loss = None
         self.average_validation_loss = None
         self.average_validation_acc = None
-        self.save_only_last_epoch = save_only_last_epoch
         self.learning_rate = learning_rate
         self.warmup_ratio = warmup_ratio
         self.num_training_steps = num_training_steps
@@ -250,7 +258,7 @@ class LightningModel(pl.LightningModule):
             labels=labels,
         )
 
-        self.log("train_loss", loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
+        self.log("train_loss", loss, prog_bar=True, logger=True, sync_dist=True)
 
         if self.fgm is not None:
             self.manual_backward(loss)
@@ -303,37 +311,21 @@ class LightningModel(pl.LightningModule):
             labels=labels,
         )
 
-        self.log("test_loss", loss, prog_bar=True, logger=True)
+        self.log("test_loss", loss, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
     def configure_optimizers(self):
         """configure optimizers"""
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
-                "weight_decay": 0.01,
-            },
-            {
-                "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
-                "weight_decay": 0.0,
-            },
-        ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.learning_rate)
-        sceduler = get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=self.warmup_ratio * self.num_training_steps,
-            num_training_steps=self.num_training_steps,
-        )
-        sceduler = {
-            "scheduler": sceduler,
-            "interval": "step",
-            "frequency": 1,
-        }
-        return [optimizer], [sceduler]
+        super().configure_optimizers()
 
     @rank_zero_only
-    def _save_checkpoint(self, path):
+    def on_save_checkpoint(self, checkpoint):
+        path = (
+            f"{self.output_dir}/simpleocr-epoch-{self.current_epoch}-"
+            + f"train-loss-{str(self.average_training_loss)}-"
+            + f"val-loss-{str(self.average_validation_loss)}-"
+            + f"val-acc-{str(self.average_validation_acc)}"
+        )
         self.tokenizer.save_pretrained(path)
         self.feature_extractor.save_pretrained(path)
         self.model.save_pretrained(path)
@@ -344,18 +336,6 @@ class LightningModel(pl.LightningModule):
             torch.mean(torch.stack([x["loss"] for x in training_step_outputs])).item(),
             4,
         )
-        path = (
-            f"{self.output_dir}/simpleocr-epoch-{self.current_epoch}-"
-            + f"train-loss-{str(self.average_training_loss)}-"
-            + f"val-loss-{str(self.average_validation_loss)}-"
-            + f"val-acc-{str(self.average_validation_acc)}"
-        )
-
-        if self.save_only_last_epoch:
-            if self.current_epoch == self.trainer.max_epochs - 1:
-                self._save_checkpoint(path)
-        else:
-            self._save_checkpoint(path)
 
     def validation_epoch_end(self, validation_step_outputs):
         _loss = [x["val_loss"].cpu() for x in validation_step_outputs]
@@ -368,8 +348,8 @@ class LightningModel(pl.LightningModule):
             torch.mean(torch.stack(_acc)).item(),
             4,
         )
-        self.log("val_loss", self.average_validation_loss, prog_bar=True, logger=True, on_epoch=True, on_step=False)
-        self.log("val_acc", self.average_validation_acc, prog_bar=True, logger=True, on_epoch=True, on_step=False)
+        self.log("val_loss", self.average_validation_loss, prog_bar=True, logger=True, sync_dist=True)
+        self.log("val_acc", self.average_validation_acc, prog_bar=True, logger=True, sync_dist=True)
 
 
 class SimpleOCR:
@@ -454,8 +434,9 @@ class SimpleOCR:
     def train(
         self,
         train_df: pd.DataFrame,
-        eval_df: pd.DataFrame,
+        valid_df: pd.DataFrame,
         image_dir: str = ".",
+        image_transform: Optional[Callable] = None,
         target_max_token_len: int = 512,
         batch_size: int = 8,
         max_epochs: int = 5,
@@ -465,19 +446,18 @@ class SimpleOCR:
         precision=32,
         logger="default",
         dataloader_num_workers: int = 2,
-        save_only_last_epoch: bool = False,
-        accumulate_grad_batches: int = 1,
         learning_rate: float = 1e-4,
         gradient_clip_algorithm: str = "norm",
         gradient_clip_val: float = 1.0,
         warmup_ratio: float = 0.1,
         use_fgm: bool = False,
+        **kwargs,
     ):
         """
         trains OCR model on custom dataset
         Args:
             train_df (pd.DataFrame): training datarame. Dataframe must have 2 column --> "image_path" and "target_text"
-            eval_df ([type], optional): validation datarame. Dataframe must have 2 column --> "image_path" and "target_text"
+            valid_df ([type], optional): validation datarame. Dataframe must have 2 column --> "image_path" and "target_text"
             image_dir (str, optional): image directory. Defaults to ".".
             target_max_token_len (int, optional): max token length of target text. Defaults to 512.
             batch_size (int, optional): batch size. Defaults to 8.
@@ -488,11 +468,11 @@ class SimpleOCR:
             precision (int, optional): sets precision training - Double precision (64), full precision (32) or half precision (16). Defaults to 32.
             logger (pytorch_lightning.loggers) : any logger supported by PyTorch Lightning. Defaults to "default". If "default", pytorch lightning default logger is used.
             dataloader_num_workers (int, optional): number of workers in train/test/val dataloader
-            save_only_last_epoch (bool, optional): If True, saves only the last epoch else models are saved at every epoch
         """
         self.data_module = LightningDataModule(
             train_df,
-            eval_df,
+            valid_df,
+            image_transform=image_transform,
             feature_extractor=self.feature_extractor,
             tokenizer=self.tokenizer,
             batch_size=batch_size,
@@ -506,7 +486,6 @@ class SimpleOCR:
             tokenizer=self.tokenizer,
             model=self.model,
             output_dir=output_dir,
-            save_only_last_epoch=save_only_last_epoch,
             learning_rate=learning_rate,
             warmup_ratio=warmup_ratio,
             num_training_steps=max_epochs * len(train_df) // batch_size,
@@ -530,11 +509,24 @@ class SimpleOCR:
             )
             callbacks.append(early_stop_callback)
 
+        checkpoint_callback = ModelCheckpoint(
+            monitor="val_loss",
+            save_top_k=1,
+            save_last=False,
+            mode="min",
+        )
+
+        callbacks.append(checkpoint_callback)
+
         # add gpu support
         gpus = torch.cuda.device_count() if use_gpu else 0
 
         # add logger
         loggers = True if logger == "default" else logger
+
+        accumulate_grad_batches = kwargs.pop("accumulate_grad_batches", 1)
+        val_check_interval = kwargs.pop("val_check_interval", 1.0)
+        log_every_n_steps = kwargs.pop("log_every_n_steps", 50)
 
         # prepare trainer
         trainer = pl.Trainer(
@@ -548,6 +540,8 @@ class SimpleOCR:
             accumulate_grad_batches=accumulate_grad_batches,
             gradient_clip_algorithm=gradient_clip_algorithm,
             gradient_clip_val=gradient_clip_val,
+            val_check_interval=val_check_interval,
+            log_every_n_steps=log_every_n_steps,
             # track_grad_norm=2,
         )
 
@@ -574,7 +568,7 @@ class SimpleOCR:
             pass
         else:
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(model_dir)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
+            self.tokenizer = BertTokenizerFast.from_pretrained(model_dir)
             self.model = VisionEncoderDecoderModel.from_pretrained(model_dir)
 
         newly_added_num = self.tokenizer.add_tokens(special_tokens)
@@ -624,6 +618,7 @@ class SimpleOCR:
         Returns:
             list[str]: returns predictions
         """
+        self.model.eval()
         if isinstance(source_image, (str, Path)):
             source_image = cv2.cvtColor(cv2.imread(str(source_image)), cv2.COLOR_BGR2RGB)
 
@@ -687,6 +682,7 @@ class SimpleOCR:
         Returns:
             list[str]: returns predictions
         """
+        self.model.eval()
         if not isinstance(source_images, list) or len(source_images) == 0:
             return []
 

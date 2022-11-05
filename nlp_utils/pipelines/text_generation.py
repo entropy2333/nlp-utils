@@ -21,14 +21,10 @@ from transformers import ByT5Tokenizer, MT5ForConditionalGeneration
 from transformers import MT5TokenizerFast as MT5Tokenizer
 from transformers import PreTrainedTokenizer, T5ForConditionalGeneration
 from transformers import T5TokenizerFast as T5Tokenizer
-from transformers.optimization import get_linear_schedule_with_warmup
 
 from ..models.cpt.modeling_cpt import CPTForConditionalGeneration
 from ..models.fgm import FGM
-
-
-torch.cuda.empty_cache()
-pl.seed_everything(42)
+from .base_model import BaseLightningModel
 
 
 class PyTorchDataModule(Dataset):
@@ -170,7 +166,7 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
 
-class LightningModel(pl.LightningModule):
+class LightningModel(BaseLightningModel):
     """PyTorch Lightning Model class"""
 
     def __init__(
@@ -289,29 +285,7 @@ class LightningModel(pl.LightningModule):
 
     def configure_optimizers(self):
         """configure optimizers"""
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
-                "weight_decay": 0.01,
-            },
-            {
-                "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
-                "weight_decay": 0.0,
-            },
-        ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.learning_rate)
-        sceduler = get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=self.warmup_ratio * self.num_training_steps,
-            num_training_steps=self.num_training_steps,
-        )
-        sceduler = {
-            "scheduler": sceduler,
-            "interval": "step",
-            "frequency": 1,
-        }
-        return [optimizer], [sceduler]
+        super().configure_optimizers()
 
     def training_epoch_end(self, training_step_outputs):
         """save tokenizer and model on epoch end"""
