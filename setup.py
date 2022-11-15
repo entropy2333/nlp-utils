@@ -15,7 +15,7 @@ install_requires = [
     "pandas",
     "seaborn",
     "matplotlib",
-    "scikit-learn",
+    "loguru",
 ]
 
 extras = {}

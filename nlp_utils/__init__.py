@@ -8,6 +8,6 @@ from .file_utils import (
     write2json_by_line,
     write2pickle,
 )
-from .log_utils import disable_logger, enable_logger, logger
+from .log_utils import disable_logger, enable_logger, logger, set_logger_level
 from .tqdm import tqdm
 from .train_utils import memory_report

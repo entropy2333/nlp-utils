@@ -4,6 +4,8 @@ from functools import partial
 from itertools import chain
 from typing import Dict, List
 
+from loguru import logger
+
 
 FULL_WIDTH_CHARACTERS_A_Z = list(range(0xFF21, 0xFF3B))
 FULL_WIDTH_CHARACTERS_a_z = list(range(0xFF41, 0xFF5B))
@@ -27,7 +29,18 @@ HALF_WIDTH_CHARACTERS_PUNCTUATION = (
 )
 
 
-def get_pattern_counter(values, patterns, print_others=False):
+def get_pattern_counter(values, patterns, print_others=False, early_stop=True):
+    """
+    Get the number of values that match the pattern.
+
+    Example Usage:
+        >>> values = ["abc", "def", "ghi", "jkl", "mno", "pqr", "stu", "vwx", "yz"]
+        >>> patterns = [r"^[a-z]{3}$", r"^[a-z]{2}$", r"^[a-z]{2,3}$"]
+        >>> get_pattern_counter(values, patterns)
+        {'^[a-z]{3}$': 8, '^[a-z]{2}$': 1}
+        >>> get_pattern_counter(values, patterns, early_stop=False)
+        {'^[a-z]{2,3}$': 9, '^[a-z]{3}$': 8, '^[a-z]{2}$': 1}
+    """
     custom_counter = {}
     cnt = 0
     for value in values:
@@ -38,15 +51,16 @@ def get_pattern_counter(values, patterns, print_others=False):
                     custom_counter[pattern] = 0
                 custom_counter[pattern] += 1
                 flag = True
+            if flag and early_stop:
                 break
         if not flag:
             if "其他" not in custom_counter:
                 custom_counter["其他"] = 0
             if print_others and cnt < 10:
-                print(value)
+                logger.debug(value)
                 cnt += 1
             custom_counter["其他"] += 1
-    assert sum(custom_counter.values()) == len(values)
+    assert sum(custom_counter.values()) == len(values) or not early_stop
     return custom_counter
 
 

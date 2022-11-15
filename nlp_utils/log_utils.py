@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from loguru import logger
 
@@ -70,3 +71,7 @@ def enable_logger():
 
 def disable_logger():
     disable_loguru_logger()
+
+
+def set_logger_level(level="INFO"):
+    logger.configure(handlers=[{"sink": sys.stderr, "level": level}])
