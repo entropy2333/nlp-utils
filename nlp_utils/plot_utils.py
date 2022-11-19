@@ -61,13 +61,13 @@ def read_cv_image(image_path):
     return image
 
 
-def visualize(image, titles="", nrows=None, ncols=None, **kwargs):
+def plot_images(image, titles="", nrows=None, ncols=None, **kwargs):
     """
 
     example:
-    >>> visualize(image, titles='image')
-    >>> visualize([image, aug_image], titles=['image', 'aug_image'])
-    >>> visualize(list(map(read_cv_image, image_paths)), titles=image_paths)
+    >>> plot_images(image, titles='image')
+    >>> plot_images([image, aug_image], titles=['image', 'aug_image'])
+    >>> plot_images(list(map(read_cv_image, image_paths)), titles=image_paths)
     """
 
     def get_nearest_factor(n: int):
@@ -80,7 +80,8 @@ def visualize(image, titles="", nrows=None, ncols=None, **kwargs):
         assert x * y == n
         return x, int(y)
 
-    if isinstance(image, list) and len(image) > 0:
+    if isinstance(image, list):
+        assert len(image) > 0, "image list must not be empty"
         n_image = len(image)
         if nrows is None or ncols is None:
             nrows, ncols = get_nearest_factor(n_image)

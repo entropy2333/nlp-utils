@@ -26,17 +26,12 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import (
     AutoConfig,
     AutoFeatureExtractor,
-    AutoProcessor,
     AutoTokenizer,
     BertTokenizerFast,
-    DonutProcessor,
-    PreTrainedTokenizer,
     VisionEncoderDecoderConfig,
     VisionEncoderDecoderModel,
 )
-from transformers.processing_utils import ProcessorMixin
 
-from ..models.fgm import FGM
 from .base_model import BaseLightningModel
 
 
@@ -226,7 +221,13 @@ class LightningModel(BaseLightningModel):
         self.learning_rate = learning_rate
         self.warmup_ratio = warmup_ratio
         self.num_training_steps = num_training_steps
-        self.fgm = FGM(self.model, epsilon=0.5) if use_fgm else None
+
+        if use_fgm:
+            from ..models.fgm import FGM
+
+            self.fgm = FGM(self.model, epsilon=0.5)
+        else:
+            self.fgm = None
         self.automatic_optimization = False if use_fgm else True
 
     def forward(self, pixel_values, decoder_input_ids, decoder_attention_mask, labels=None):
@@ -358,7 +359,13 @@ class SimpleOCR:
 
     def __init__(self) -> None:
         """initiates SimpleOCR class"""
-        pass
+        self.model = None
+        self.feature_extractor = None
+        self.tokenizer = None
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
 
     def from_encoder_decoder_pretrained(
         self,
@@ -427,8 +434,8 @@ class SimpleOCR:
         self,
         model_type: str = "donut",
         model_name: str = "naver-clova-ix/donut-base",
-        special_tokens: List[str] = [],
-        image_size: Union[List[int], Tuple[int, int]] = (1280, 960),
+        image_height: int = 1280,
+        image_width: int = 960,
         target_max_length: int = 128,
         **kwargs,
     ) -> None:
@@ -439,14 +446,18 @@ class SimpleOCR:
             model_name (str, optional): exact model architecture name. Defaults to "naver-clova-ix/donut-base".
         """
         if model_type == "donut":
+            from transformers import DonutProcessor
+
             config = VisionEncoderDecoderConfig.from_pretrained(f"{model_name}")
-            config.encoder.image_size = image_size
+            config.encoder.image_size = (image_width, image_height)
             config.decoder.max_length = target_max_length
+            self.model = VisionEncoderDecoderModel.from_pretrained(f"{model_name}", config=config)
             processor = DonutProcessor.from_pretrained(f"{model_name}")
+            processor.feature_extractor.size = (image_height, image_width)
             self.feature_extractor = processor.feature_extractor
             self.tokenizer = processor.tokenizer
-            self.model = VisionEncoderDecoderModel.from_pretrained(f"{model_name}", config=config)
 
+        special_tokens = kwargs.pop("special_tokens", [])
         newly_added_num = self.tokenizer.add_tokens(special_tokens)
         if newly_added_num > 0:
             self.model.decoder.resize_token_embeddings(len(self.tokenizer))
@@ -585,7 +596,8 @@ class SimpleOCR:
         """
         if model_type == "donut":
             # TODO: add support for donut
-            pass
+            from transformers import DonutProcessor
+
         else:
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(model_dir)
             self.tokenizer = BertTokenizerFast.from_pretrained(model_dir)

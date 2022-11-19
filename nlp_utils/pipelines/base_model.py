@@ -1,6 +1,7 @@
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from transformers.optimization import (
     AdamW,
     get_constant_schedule,
@@ -10,10 +11,11 @@ from transformers.optimization import (
 )
 
 from ..models.fgm import FGM
-from pytorch_lightning.utilities.rank_zero import rank_zero_only
+
 
 torch.cuda.empty_cache()
 pl.seed_everything(42)
+
 
 class BaseLightningModel(pl.LightningModule):
     """Base PyTorch Lightning Model class"""

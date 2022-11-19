@@ -37,7 +37,7 @@ def load_json_by_line(data_path):
     return data
 
 
-def write2json_by_line(data: Union[List, Dict], data_path, data_name="data", ensure_ascii=False, indent=2):
+def write2json_by_line(data: Union[List, Dict], data_path, data_name="data", ensure_ascii=False, indent=None):
     """
     write data to jsonline file
     """
