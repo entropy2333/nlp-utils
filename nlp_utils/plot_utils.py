@@ -109,3 +109,53 @@ def plot_images(image, titles="", nrows=None, ncols=None, **kwargs):
         plt.imshow(image)
         plt.axis("off")
         plt.title(titles)
+
+
+def pil_to_cv2(pil_image):
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+
+def cv2_to_pil(cv2_image):
+    from PIL import Image
+
+    return Image.fromarray(cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB))
+
+
+def make_mask_image(image, bboxes, labels=None, colors=None, fill=True):
+    """
+    Args:
+        image: image to draw on
+        bboxes: list of bounding boxes
+        labels: list of labels
+        colors: list of colors
+    Returns:
+        mask image with bounding boxes
+    """
+    if colors is None:
+        colors = [(255, 255, 255) for _ in range(len(bboxes))]
+    if labels is None:
+        labels = [""] * len(bboxes)
+    # create a mask image
+    mask = np.zeros(image.shape, dtype=np.uint8)
+    for bbox, label, color in zip(bboxes, labels, colors):
+        if len(bbox) == 4:
+            x1, y1, x2, y2 = bbox
+            if fill:
+                cv2.rectangle(mask, (x1, y1), (x2, y2), color, -1)
+            else:
+                cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+        elif len(bbox) == 8:
+            x1, y1, x2, y2, x3, y3, x4, y4 = bbox
+            if fill:
+                pts = np.array([[x1, y1], [x2, y2], [x3, y3], [x4, y4]], np.int32)
+                pts = pts.reshape((-1, 1, 2))
+                # fill the polygon with the color
+                cv2.fillPoly(mask, [pts], color)
+            else:
+                cv2.line(image, (x1, y1), (x2, y2), color, 2)
+                cv2.line(image, (x2, y2), (x3, y3), color, 2)
+                cv2.line(image, (x3, y3), (x4, y4), color, 2)
+                cv2.line(image, (x4, y4), (x1, y1), color, 2)
+                cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+    return mask
