@@ -75,3 +75,7 @@ def disable_logger():
 
 def set_logger_level(level="INFO"):
     logger.configure(handlers=[{"sink": sys.stderr, "level": level}])
+
+
+def get_logger_level():
+    return logger.level("nlp_utils").name

@@ -84,7 +84,7 @@ def memory_report():
 
     gpus = GPUtil.getGPUs()
     for i, gpu in enumerate(gpus):
-        print(f"GPU {i} Mem Usage: {gpu.memoryFree}MB / {gpu.memoryTotal}MB | Util {gpu.memoryUtil:2.2f}%")
+        print(f"GPU {i} Mem Usage: {gpu.memoryUsed} MB / {gpu.memoryTotal} MB | Util {gpu.memoryUtil:2.2f}%")
 
 
 def model_summary(model, max_depth: int = 1, example_input_array=None):

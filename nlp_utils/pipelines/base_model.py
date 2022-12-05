@@ -10,11 +10,9 @@ from transformers.optimization import (
     get_linear_schedule_with_warmup,
 )
 
-from ..models.fgm import FGM
-
 
 torch.cuda.empty_cache()
-pl.seed_everything(42)
+pl.seed_everything(42, workers=True)
 
 
 class BaseLightningModel(pl.LightningModule):
@@ -29,6 +27,7 @@ class BaseLightningModel(pl.LightningModule):
         scheduler_type: str = "linear",
         num_training_steps: int = 1000,
         use_fgm: bool = False,
+        **kwargs,
     ):
         """
         initiates a PyTorch Lightning Model
@@ -51,14 +50,24 @@ class BaseLightningModel(pl.LightningModule):
         self.scheduler_type = scheduler_type
         self.warmup_ratio = warmup_ratio
         self.num_training_steps = num_training_steps
-        self.fgm = FGM(self.model, epsilon=0.5) if use_fgm else None
+        if use_fgm:
+            from ..models.fgm import FGM
+
+            self.fgm = FGM(self.model, epsilon=0.5)
+        else:
+            self.fgm = None
         self.automatic_optimization = False if use_fgm else True
 
     def configure_optimizers(self):
         """configure optimizers"""
-        optimizer = self._configure_optimizer()
+        optimizer = self._configure_optimizer(self.model, self.learning_rate)
         num_warmup_steps = int(self.num_training_steps * self.warmup_ratio)
-        scheduler = self._configure_scheduler(optimizer, num_warmup_steps, self.num_training_steps)
+        scheduler = self._configure_scheduler(
+            self.scheduler_type,
+            optimizer,
+            num_warmup_steps,
+            self.num_training_steps,
+        )
         return [optimizer], [scheduler]
 
     @rank_zero_only
@@ -66,38 +75,38 @@ class BaseLightningModel(pl.LightningModule):
         raise NotImplementedError
 
     @staticmethod
-    def _configure_optimizer(self):
+    def _configure_optimizer(model, learning_rate):
         no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
             {
-                "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+                "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
                 "weight_decay": 0.01,
             },
             {
-                "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+                "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
                 "weight_decay": 0.0,
             },
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.learning_rate)
+        optimizer = AdamW(optimizer_grouped_parameters, lr=learning_rate)
         return optimizer
 
     @staticmethod
-    def _configure_scheduler(self, optimizer, num_warmup_steps, num_training_steps):
-        if self.scheduler_type == "linear":
+    def _configure_scheduler(scheduler_type, optimizer, num_warmup_steps, num_training_steps):
+        if scheduler_type == "linear":
             scheduler = get_linear_schedule_with_warmup(
                 optimizer,
                 num_warmup_steps=num_warmup_steps,
                 num_training_steps=num_training_steps,
             )
-        elif self.scheduler_type == "cosine":
+        elif scheduler_type == "cosine":
             scheduler = get_cosine_schedule_with_warmup(
                 optimizer,
                 num_warmup_steps=num_warmup_steps,
                 num_training_steps=num_training_steps,
             )
-        elif self.scheduler_type == "constant":
+        elif scheduler_type == "constant":
             scheduler = get_constant_schedule(optimizer)
-        elif self.scheduler_type == "constant_with_warmup":
+        elif scheduler_type == "constant_with_warmup":
             scheduler = get_constant_schedule_with_warmup(
                 optimizer,
                 num_warmup_steps=num_warmup_steps,

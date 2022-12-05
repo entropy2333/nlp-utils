@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
+from loguru import logger
 from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -32,6 +33,7 @@ from transformers import (
     VisionEncoderDecoderModel,
 )
 
+from ..log_utils import set_logger_level
 from .base_model import BaseLightningModel
 
 
@@ -99,10 +101,17 @@ class PyTorchDataModule(Dataset):
         # to make sure we have correct labels for text generation
         labels[labels == self.tokenizer.pad_token_id] = self.ignore_id
 
-        return dict(
+        return_dict = dict(
             pixel_values=pixel_values.squeeze(),
             labels=labels.flatten(),
         )
+
+        logger.debug(f"pixel_values: {pixel_values.shape}")
+        logger.debug(f"labels: {labels.shape}")
+        logger.debug(f"return_dict: {return_dict}")
+        set_logger_level("INFO")
+
+        return return_dict
 
 
 class LightningDataModule(pl.LightningDataModule):
@@ -191,44 +200,16 @@ class LightningDataModule(pl.LightningDataModule):
 class LightningModel(BaseLightningModel):
     """PyTorch Lightning Model class"""
 
-    def __init__(
-        self,
-        feature_extractor,
-        tokenizer,
-        model,
-        output_dir: str = "outputs",
-        learning_rate: float = 1e-4,
-        warmup_ratio: float = 0.1,
-        num_training_steps: int = 1000,
-        use_fgm: bool = False,
-    ):
+    def __init__(self, feature_extractor, tokenizer, *args, **kwargs):
         """
         initiates a PyTorch Lightning Model
         Args:
             feature_extractor: AutoFeatureExtractor
             tokenizer : PreTrainedTokenizer
-            model : PreTrainedModel
-            output_dir (str, optional): output directory to save model checkpoints. Defaults to "outputs".
         """
-        super().__init__()
-        self.model = model
+        super(LightningModel, self).__init__(*args, **kwargs)
         self.feature_extractor = feature_extractor
         self.tokenizer = tokenizer
-        self.output_dir = output_dir
-        self.average_training_loss = None
-        self.average_validation_loss = None
-        self.average_validation_acc = None
-        self.learning_rate = learning_rate
-        self.warmup_ratio = warmup_ratio
-        self.num_training_steps = num_training_steps
-
-        if use_fgm:
-            from ..models.fgm import FGM
-
-            self.fgm = FGM(self.model, epsilon=0.5)
-        else:
-            self.fgm = None
-        self.automatic_optimization = False if use_fgm else True
 
     def forward(self, pixel_values, decoder_input_ids, decoder_attention_mask, labels=None):
         """forward step"""
@@ -316,10 +297,6 @@ class LightningModel(BaseLightningModel):
         self.log("test_loss", loss, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
-    def configure_optimizers(self):
-        """configure optimizers"""
-        super().configure_optimizers()
-
     @rank_zero_only
     def on_save_checkpoint(self, checkpoint):
         path = (
@@ -360,6 +337,7 @@ class SimpleOCR:
     def __init__(self) -> None:
         """initiates SimpleOCR class"""
         self.model = None
+        self.processor = None
         self.feature_extractor = None
         self.tokenizer = None
         if torch.cuda.is_available():
@@ -454,12 +432,19 @@ class SimpleOCR:
             self.model = VisionEncoderDecoderModel.from_pretrained(f"{model_name}", config=config)
             processor = DonutProcessor.from_pretrained(f"{model_name}")
             processor.feature_extractor.size = (image_height, image_width)
-            self.feature_extractor = processor.feature_extractor
+            self.feature_extractor = processor
             self.tokenizer = processor.tokenizer
+            self.model.config.decoder_start_token_id = self.tokenizer.bos_token_id
+            self.model.config.bos_token_id = self.tokenizer.bos_token_id
+            self.model.config.eos_token_id = self.tokenizer.eos_token_id
+            self.model.config.pad_token_id = self.tokenizer.pad_token_id
+            self.model.config.vocab_size = self.model.config.decoder.vocab_size
+            self.model.decoder.resize_token_embeddings(len(self.tokenizer))
 
         special_tokens = kwargs.pop("special_tokens", [])
         newly_added_num = self.tokenizer.add_tokens(special_tokens)
         if newly_added_num > 0:
+            logger.info(f"Added {newly_added_num} special tokens: {special_tokens[:10]}")
             self.model.decoder.resize_token_embeddings(len(self.tokenizer))
 
     def train(
@@ -525,7 +510,7 @@ class SimpleOCR:
 
         # add callbacks
         callbacks = [
-            TQDMProgressBar(refresh_rate=50),
+            TQDMProgressBar(refresh_rate=kwargs.pop("refresh_rate", 50)),
             LearningRateMonitor(logging_interval="step"),
             RichModelSummary(max_depth=3),
         ]
@@ -583,9 +568,8 @@ class SimpleOCR:
         self,
         model_type: str = "other",
         model_dir: str = "outputs",
-        use_gpu: bool = False,
-        special_tokens: list = [],
-        **kwargs
+        use_gpu: bool = True,
+        **kwargs,
     ):
         """
         loads a checkpoint for inferencing/prediction
@@ -598,11 +582,17 @@ class SimpleOCR:
             # TODO: add support for donut
             from transformers import DonutProcessor
 
+            processor = DonutProcessor.from_pretrained(model_dir)
+            self.processor = processor
+            self.feature_extractor = processor.feature_extractor
+            self.tokenizer = processor.tokenizer
+            self.model = VisionEncoderDecoderModel.from_pretrained(model_dir)
         else:
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(model_dir)
             self.tokenizer = BertTokenizerFast.from_pretrained(model_dir)
             self.model = VisionEncoderDecoderModel.from_pretrained(model_dir)
 
+        special_tokens = kwargs.pop("special_tokens", [])
         newly_added_num = self.tokenizer.add_tokens(special_tokens)
         if newly_added_num > 0:
             self.model.decoder.resize_token_embeddings(len(self.tokenizer))
@@ -619,10 +609,11 @@ class SimpleOCR:
 
     def predict(
         self,
-        source_image: Union[str, Path, np.ndarray],
-        max_length: int = 512,
+        source_image: Union[str, Path, np.ndarray, List],
+        prompt: str = None,
+        max_length: int = 128,
         num_return_sequences: int = 1,
-        num_beams: int = 2,
+        num_beams: int = 1,
         top_k: int = 50,
         top_p: float = 0.95,
         do_sample: bool = True,
@@ -631,11 +622,13 @@ class SimpleOCR:
         early_stopping: bool = True,
         skip_special_tokens: bool = True,
         clean_up_tokenization_spaces: bool = True,
+        **kwargs,
     ):
         """
         generates prediction for OCR model
         Args:
-            source_text (str): any text for generating predictions
+            source_image (Union[str, Path, np.ndarray, List]): path to image or image array
+            prompt (str, optional): prompt for generating predictions. Defaults to None.
             max_length (int, optional): max token length of prediction. Defaults to 512.
             num_return_sequences (int, optional): number of predictions to be returned. Defaults to 1.
             num_beams (int, optional): number of beams. Defaults to 2.
@@ -651,14 +644,32 @@ class SimpleOCR:
             list[str]: returns predictions
         """
         self.model.eval()
-        if isinstance(source_image, (str, Path)):
-            source_image = cv2.cvtColor(cv2.imread(str(source_image)), cv2.COLOR_BGR2RGB)
+
+        if not isinstance(source_image, list):
+            source_image = [source_image]
+
+        assert len(source_image) > 0, "source_image cannot be empty"
+
+        if isinstance(source_image[0], (str, Path)):
+            source_image = [cv2.cvtColor(cv2.imread(str(img)), cv2.COLOR_BGR2RGB) for img in source_image]
 
         pixel_values = self.feature_extractor(source_image, return_tensors="pt").pixel_values
 
         pixel_values = pixel_values.to(self.device)
 
-        generated_ids = self.model.generate(
+        batch_size, _, height, width = pixel_values.shape
+
+        decoder_input_ids = None
+        if prompt is not None:
+            decoder_input_ids = self.tokenizer(
+                prompt,
+                add_special_tokens=False,
+                return_tensors="pt",
+            ).input_ids.to(self.device)
+            decoder_input_ids = decoder_input_ids.repeat(batch_size, 1)
+            kwargs["decoder_input_ids"] = decoder_input_ids
+
+        generated_outputs = self.model.generate(
             pixel_values=pixel_values,
             num_beams=num_beams,
             max_length=max_length,
@@ -669,76 +680,12 @@ class SimpleOCR:
             top_k=top_k,
             do_sample=do_sample,
             num_return_sequences=num_return_sequences,
+            return_dict_in_generate=True,
+            **kwargs,
         )
-        preds = [
-            self.tokenizer.decode(
-                g,
-                skip_special_tokens=skip_special_tokens,
-                clean_up_tokenization_spaces=clean_up_tokenization_spaces,
-            )
-            for g in generated_ids
-        ]
-        return preds
 
-    def batch_predict(
-        self,
-        source_images: List[Union[str, Path, np.ndarray]],
-        batch_size: int = 32,
-        max_length: int = 512,
-        num_return_sequences: int = 1,
-        num_beams: int = 2,
-        top_k: int = 50,
-        top_p: float = 0.95,
-        do_sample: bool = True,
-        repetition_penalty: float = 2.5,
-        length_penalty: float = 1.0,
-        early_stopping: bool = True,
-        skip_special_tokens: bool = True,
-        clean_up_tokenization_spaces: bool = True,
-    ):
-        """
-        generates prediction for SwinOCR model
-        Args:
-            source_text (str): any text for generating predictions
-            max_length (int, optional): max token length of prediction. Defaults to 512.
-            num_return_sequences (int, optional): number of predictions to be returned. Defaults to 1.
-            num_beams (int, optional): number of beams. Defaults to 2.
-            top_k (int, optional): Defaults to 50.
-            top_p (float, optional): Defaults to 0.95.
-            do_sample (bool, optional): Defaults to True.
-            repetition_penalty (float, optional): Defaults to 2.5.
-            length_penalty (float, optional): Defaults to 1.0.
-            early_stopping (bool, optional): Defaults to True.
-            skip_special_tokens (bool, optional): Defaults to True.
-            clean_up_tokenization_spaces (bool, optional): Defaults to True.
-        Returns:
-            list[str]: returns predictions
-        """
-        self.model.eval()
-        if not isinstance(source_images, list) or len(source_images) == 0:
-            return []
-
-        if isinstance(source_images[0], (str, Path)):
-            source_images = [str(p) for p in source_images]
-            source_images = [cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in source_images]
-
-        pixel_values = self.feature_extractor(source_images, return_tensors="pt").pixel_values
-        pixel_values = pixel_values.to(self.device)
-
-        generated_ids = self.model.generate(
-            pixel_values=pixel_values,
-            num_beams=num_beams,
-            max_length=max_length,
-            repetition_penalty=repetition_penalty,
-            length_penalty=length_penalty,
-            early_stopping=early_stopping,
-            top_p=top_p,
-            top_k=top_k,
-            do_sample=do_sample,
-            num_return_sequences=num_return_sequences,
-        )
         preds = self.tokenizer.batch_decode(
-            generated_ids,
+            generated_outputs.sequences,
             skip_special_tokens=skip_special_tokens,
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
         )
@@ -775,7 +722,7 @@ def predict_main(args, **kwargs):
     logger.info(f"Predicting with batch_size={batch_size}")
     for i in tqdm(range(0, len(image_list), batch_size), desc="Predicting"):
         batch_image_list = image_list[i : i + batch_size]
-        batch_prediction = model.batch_predict(
+        batch_prediction = model.predict(
             source_images=batch_image_list,
             max_length=args.max_length,
             num_beams=args.num_beams,
