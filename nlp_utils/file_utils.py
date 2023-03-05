@@ -9,48 +9,91 @@ from loguru import logger
 from omegaconf import OmegaConf
 
 
-def load_json(json_file):
-    with open(json_file, "r", encoding="utf8") as fin:
-        data = json.load(fin)
-    logger.info(f"load {len(data)} from {json_file}")
-    return data
+class JsonFactory:
+    @staticmethod
+    def load_json(json_file):
+        with open(json_file, "r", encoding="utf8") as fin:
+            data = json.load(fin)
+        logger.info(f"load {len(data)} from {json_file}")
+        return data
 
-
-def write2json(data, data_path, data_name="data", ensure_ascii=False, indent=2):
-    with open(data_path, "w", encoding="utf-8") as fout:
-        fout.write(json.dumps(data, ensure_ascii=ensure_ascii, indent=indent))
-    logger.info(f"{data_name}({len(data)}) saved into {data_path}")
-
-
-def load_json_by_line(data_path):
-    """
-    load jsonline file
-    """
-    data = []
-    with open(data_path, "r", encoding="utf8") as f:
-        reader = f.readlines()
-        for line in reader:
-            # logger.info(line)
-            sample = json.loads(line.strip())
-            data.append(sample)
-    logger.info(f"load {len(data)} from {data_path}")
-    return data
-
-
-def write2json_by_line(data: Union[List, Dict], data_path, data_name="data", ensure_ascii=False, indent=None):
-    """
-    write data to jsonline file
-    """
-    with open(data_path, "w", encoding="utf-8") as fout:
-        if isinstance(data, dict):
-            for k, v in data.items():
-                fout.write(json.dumps({"{}".format(k): v}, ensure_ascii=ensure_ascii, indent=indent))
-                fout.write("\n")
-        elif isinstance(data, list):
-            for line in data:
-                fout.write(json.dumps(line, ensure_ascii=ensure_ascii, indent=indent))
-                fout.write("\n")
+    @staticmethod
+    def write_json(data, data_path, data_name="data", ensure_ascii=False, indent=2):
+        with open(data_path, "w", encoding="utf-8") as fout:
+            fout.write(json.dumps(data, ensure_ascii=ensure_ascii, indent=indent))
         logger.info(f"{data_name}({len(data)}) saved into {data_path}")
+
+    @staticmethod
+    def load_jsonl(file_path: str, type: str = "list", gzip: bool = False):
+        """
+        load jsonline file
+        """
+        data = [] if type == "list" else {}
+
+        def _read_jsonl(f):
+            reader = f.readlines()
+            for line in reader:
+                # logger.info(line)
+                sample = json.loads(line.strip())
+                if type == "list":
+                    data.append(sample)
+                else:
+                    data.update(sample)
+
+        if gzip:
+            import gzip
+
+            file_path = file_path if file_path.endswith(".gz") else file_path + ".gz"
+            with gzip.open(file_path, "rt", encoding="utf8") as f:
+                _read_jsonl(f)
+        else:
+            with Path(file_path).open("r", encoding="utf8") as f:
+                _read_jsonl(f)
+
+        logger.info(f"load {len(data)} from {file_path}")
+        return data
+
+    @staticmethod
+    def write_jsonl(data: Union[List, Dict], data_path, data_name="data", ensure_ascii=False, gzip: bool = False):
+        """
+        write data to jsonline file
+        """
+        Path(data_path).parent.mkdir(parents=True, exist_ok=True)
+
+        def _write(f):
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    f.write(json.dumps({"{}".format(k): v}, ensure_ascii=ensure_ascii))
+                    f.write("\n")
+            elif isinstance(data, list):
+                for line in data:
+                    f.write(json.dumps(line, ensure_ascii=ensure_ascii))
+                    f.write("\n")
+            logger.info(f"{data_name}({len(data)}) saved into {data_path}")
+
+        if gzip:
+            import gzip
+
+            data_path = data_path if data_path.endswith(".gz") else data_path + ".gz"
+            with gzip.open(data_path, "wt", encoding="utf-8") as fout:
+                _write(fout)
+        else:
+            with Path(data_path).open("w", encoding="utf-8") as fout:
+                _write(fout)
+
+    @staticmethod
+    def load_jsonl_gzip(file_path: str, type: str = "list"):
+        return JsonFactory.load_jsonl(file_path, type, gzip=True)
+
+    @staticmethod
+    def write_jsonl_gzip(data: Union[List, Dict], data_path, data_name="data", ensure_ascii=False):
+        return JsonFactory.write_jsonl(data, data_path, data_name, ensure_ascii, gzip=True)
+
+
+load_json = JsonFactory.load_json
+write2json = JsonFactory.write_json
+load_json_by_line = JsonFactory.load_jsonl
+write2json_by_line = JsonFactory.write_jsonl
 
 
 def walk_dir(dir_path, suffix=".jpg", recursive=True):

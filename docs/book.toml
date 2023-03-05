@@ -1,0 +1,6 @@
+[book]
+authors = ["entropy2333"]
+language = "en"
+multilingual = false
+src = "src"
+title = "nlp-utils"
