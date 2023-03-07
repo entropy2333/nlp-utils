@@ -159,3 +159,80 @@ def make_mask_image(image, bboxes, labels=None, colors=None, fill=True):
                 cv2.line(image, (x4, y4), (x1, y1), color, 2)
                 cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
     return mask
+
+
+def plot_venn_2(set1: set, set2: set, dpi: int = 150, colors=("blue", "green"), labels=("A", "B")):
+    """
+    plot venn graph on 2 sets
+
+    >>> plot_venn_2(
+        {"apple", "banana", "orange", "pear"},
+        {"banana", "orange", "pear", "kiwi"},
+    )
+    """
+    from matplotlib_venn import venn2, venn2_circles
+
+    # create figure
+    plt.figure(dpi=dpi)
+
+    # create venn graph
+    v = venn2(
+        subsets=(set1, set2),
+        set_colors=colors,
+        set_labels=labels,
+    )
+
+    # plot intersection
+    v.get_label_by_id("10").set_text("\n".join(set1 - set2))
+    v.get_label_by_id("01").set_text("\n".join(set2 - set1))
+    v.get_label_by_id("11").set_text("\n".join(set1 & set2))
+
+    # add circle
+    venn2_circles(subsets=(set1, set2), lw=0.5, color="black")
+
+    # add title
+    plt.title("Set Intersection Visualization")
+
+    # show the graph
+    plt.show()
+
+
+def plot_venn_3(set1, set2, set3, dpi: int = 150, colors=("blue", "green", "red"), labels=("A", "B", "C")):
+    """
+    plot venn graph on 3 sets
+
+    >>> plot_venn_3(
+        {"apple", "banana", "orange", "pear"},
+        {"banana", "orange", "pear", "kiwi"},
+        {"banana", "orange", "pear", "grape"},
+    )
+    """
+    from matplotlib_venn import venn3, venn3_circles
+
+    # create figure
+    plt.figure(dpi=dpi)
+
+    # create venn graph
+    v = venn3(
+        subsets=(set1, set2, set3),
+        set_colors=colors,
+        set_labels=labels,
+    )
+
+    # plot intersection
+    v.get_label_by_id("100").set_text("\n".join(set1 - set2 - set3))
+    v.get_label_by_id("010").set_text("\n".join(set2 - set1 - set3))
+    v.get_label_by_id("110").set_text("\n".join(set1 & set2 - set3))
+    v.get_label_by_id("001").set_text("\n".join(set3 - set1 - set2))
+    v.get_label_by_id("101").set_text("\n".join(set1 & set3 - set2))
+    v.get_label_by_id("011").set_text("\n".join(set2 & set3 - set1))
+    v.get_label_by_id("111").set_text("\n".join(set1 & set2 & set3))
+
+    # add circle
+    venn3_circles(subsets=(set1, set2, set3), lw=0.5, color="black")
+
+    # add title
+    plt.title("Set Intersection Visualization")
+
+    # show the graph
+    plt.show()
