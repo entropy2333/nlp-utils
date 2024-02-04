@@ -54,7 +54,13 @@ class JsonFactory:
         return data
 
     @staticmethod
-    def write_jsonl(data: Union[List, Dict], data_path, data_name="data", ensure_ascii=False, gzip: bool = False):
+    def write_jsonl(
+        data: Union[List, Dict],
+        data_path,
+        data_name="data",
+        ensure_ascii=False,
+        gzip: bool = False,
+    ):
         """
         write data to jsonline file
         """
@@ -231,3 +237,43 @@ def get_config_from_yaml(default_conf_file: str = "./configs/default.yaml"):
     _update_config(cfg)
 
     return cfg
+
+
+def split_file_to_dir(
+    files: List[Path],
+    output_dir: Union[Path, str],
+    max_files_per_folder=1000,
+    sort_files=True,
+):
+    """
+    split files to the output directory, each folder contains max_files_per_folder files\\
+    each folder name is like 1_1000, 1001_2000, etc.
+
+    Args:
+        files: list of files
+        output_dir: output dir
+        max_files_per_folder: max files per folder
+
+    Example:
+
+        ```python
+        >>> from pathlib import Path
+        >>> files = Path('data').glob('*.txt')
+        >>> split_file_to_dir(files, 'output_dir', max_files_per_folder=1000)
+        ```
+    """
+    if sort_files:
+        files = sorted(list(files))
+    logger.info(f"Splite {len(files)} files to {output_dir}")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    folder_idx = 0
+    folder_name_prefix = 1
+    folder_name_suffix = max_files_per_folder
+    for idx in range(0, len(files), max_files_per_folder):
+        folder_name = f"{folder_name_prefix}_{folder_name_suffix}"
+        folder_name_suffix += max_files_per_folder
+        folder_idx += 1
+        Path(output_dir, folder_name).mkdir(parents=True, exist_ok=True)
+        for file in files[idx : idx + max_files_per_folder]:
+            file.rename(Path(output_dir, folder_name, file.name))
+    logger.info(f"Split {len(files)} files to {folder_idx} folders")
