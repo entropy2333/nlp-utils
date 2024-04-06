@@ -277,3 +277,44 @@ def split_file_to_dir(
         for file in files[idx : idx + max_files_per_folder]:
             file.rename(Path(output_dir, folder_name, file.name))
     logger.info(f"Split {len(files)} files to {folder_idx} folders")
+
+
+def get_file_creation_date(file_path: str) -> str:
+    """
+    Get file creation date
+        st_atime: Access time
+        st_mtime: Modification time
+        st_ctime: Change time (on Unix) / Creation time (on Windows)
+        st_birthtime: Creation time (on some Unix systems in the FreeBSD family, including macOS)
+    """
+    from datetime import datetime
+
+    birthtime = Path(file_path).stat().st_birthtime
+    return datetime.fromtimestamp(birthtime).strftime("%Y-%m-%d")
+
+
+def group_files_by_date(
+    files: List[Path],
+    output_dir: Union[Path, str],
+    output_dir_prefix: str = "",
+    sort_files=True,
+):
+    """
+    group files by date, each folder contains files of the same date
+    each folder name is like 2021-01-01, 2021-01-02, etc.
+
+    Args:
+        files: list of files
+        output_dir: output dir
+        date_format: date format
+    """
+    if sort_files:
+        files = sorted(list(files))
+    logger.info(f"Group {len(files)} files to {output_dir}")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    for file in files:
+        file_creation_date = get_file_creation_date(file)
+        folder_name = f"{output_dir_prefix}{file_creation_date}"
+        Path(output_dir, folder_name).mkdir(parents=True, exist_ok=True)
+        file.rename(Path(output_dir, folder_name, file.name))
+    logger.info(f"Group {len(files)} files by date")
