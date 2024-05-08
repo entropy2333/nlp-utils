@@ -2,7 +2,7 @@ import glob
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Callable, Dict, List, Union
 
 import dill as pickle
 from loguru import logger
@@ -306,15 +306,39 @@ def group_files_by_date(
     Args:
         files: list of files
         output_dir: output dir
-        date_format: date format
+    """
+    group_files_by_lambda(
+        files=files,
+        output_dir=output_dir,
+        group_func=get_file_creation_date,
+        output_dir_prefix=output_dir_prefix,
+        sort_files=sort_files,
+    )
+    logger.info(f"Group {len(files)} files by date")
+
+
+def group_files_by_lambda(
+    files: List[Path],
+    output_dir: Union[Path, str],
+    group_func: Callable,
+    output_dir_prefix: str = "",
+    sort_files=True,
+):
+    """
+    group files by lambda function, each folder contains files of the same key
+    each folder name is like key1, key2, etc.
+
+    Args:
+        files: list of files
+        output_dir: output dir
+        group_func: lambda function to group files, e.g., get_file_creation_date
     """
     if sort_files:
         files = sorted(list(files))
     logger.info(f"Group {len(files)} files to {output_dir}")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     for file in files:
-        file_creation_date = get_file_creation_date(file)
-        folder_name = f"{output_dir_prefix}{file_creation_date}"
+        file_group_key = group_func(file)
+        folder_name = f"{output_dir_prefix}{file_group_key}"
         Path(output_dir, folder_name).mkdir(parents=True, exist_ok=True)
         file.rename(Path(output_dir, folder_name, file.name))
-    logger.info(f"Group {len(files)} files by date")
